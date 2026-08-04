@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/denyspupin/figma-plugin-rpc/compare/v0.2.2...v0.2.3) (2026-08-04)
+
+
+### Bug Fixes
+
+* explicitly configure npm auth token ([168e05b](https://github.com/denyspupin/figma-plugin-rpc/commit/168e05bae66c794bdb63a0884fc9dc558ac281af))
+* remove provenance flag to test npm publish ([5ffdfcc](https://github.com/denyspupin/figma-plugin-rpc/commit/5ffdfcc6b86e79335bd103b8cfa19ffd602e59b7))
+
 ## [0.2.2](https://github.com/denyspupin/figma-plugin-rpc/compare/v0.2.1...v0.2.2) (2026-08-04)
 
 

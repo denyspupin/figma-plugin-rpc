@@ -1,6 +1,6 @@
 {
 	"name": "figma-plugin-rpc",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"description": "Type-safe RPC for Figma plugins — request/response procedures and server→client notifications over postMessage, with built-in Figma transports.",
 	"type": "module",
 	"main": "./dist/index.cjs",
