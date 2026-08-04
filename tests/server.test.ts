@@ -109,22 +109,28 @@ describe('RpcServer', () => {
 		expect(response.error).toContain('Unknown procedure');
 	});
 
-	it('processMessage returns true for RPC messages', async () => {
+	it('processes RPC messages and sends a response', async () => {
 		server.registerHandler('add', () => ({ result: 0 }));
 
-		const result = await server.processMessage({
+		transport.deliver({
 			__rpc: true,
 			id: 'req-1',
 			procedure: 'add',
 			payload: { a: 1, b: 2 },
 		});
 
-		expect(result).toBe(true);
+		await vi.waitFor(() => {
+			expect(transport.getSentCount()).toBe(1);
+		});
+		const response = transport.getLastSent() as Record<string, unknown>;
+		expect(response.response).toEqual({ result: 0 });
 	});
 
-	it('processMessage returns false for non-RPC messages', async () => {
-		const result = await server.processMessage({ type: 'other' });
-		expect(result).toBe(false);
+	it('ignores non-RPC messages', async () => {
+		transport.deliver({ type: 'other' });
+
+		await new Promise((r) => setTimeout(r, 10));
+		expect(transport.getSentCount()).toBe(0);
 	});
 
 	it('calls onError callback when handler throws', async () => {
@@ -137,14 +143,16 @@ describe('RpcServer', () => {
 		});
 		errorServer.start();
 
-		await errorServer.processMessage({
+		transport.deliver({
 			__rpc: true,
 			id: 'req-1',
 			procedure: 'fail',
 			payload: undefined,
 		});
 
-		expect(onError).toHaveBeenCalledWith('fail', expect.any(Error));
+		await vi.waitFor(() => {
+			expect(onError).toHaveBeenCalledWith('fail', expect.any(Error));
+		});
 
 		errorServer.stop();
 	});

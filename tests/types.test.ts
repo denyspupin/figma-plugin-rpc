@@ -109,6 +109,16 @@ describe('isRpcResponse', () => {
 		).toBe(false);
 	});
 
+	it('returns false for response without id', () => {
+		expect(
+			isRpcResponse({
+				__rpc: true,
+				procedure: 'test',
+				response: {},
+			}),
+		).toBe(false);
+	});
+
 	it('returns false for __rpc !== true', () => {
 		expect(
 			isRpcResponse({

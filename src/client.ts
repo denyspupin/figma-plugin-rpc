@@ -222,4 +222,3 @@ function createRpcClient<
 }
 
 export { RpcClient, createRpcClient };
-export type { RpcClientConfig as ClientConfig };

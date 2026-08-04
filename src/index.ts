@@ -17,7 +17,7 @@ export type { RpcTransport, Logger } from './transport';
 export { noopLogger, FigmaUiTransport, FigmaMainTransport, formatDuration } from './transport';
 
 export { RpcClient, createRpcClient } from './client';
-export type { ClientConfig, RpcClientConfig } from './client';
+export type { RpcClientConfig } from './client';
 
 export { RpcServer, createRpcServer } from './server';
-export type { ServerConfig, ServerHandler, RpcServerConfig } from './server';
+export type { RpcServerConfig, RpcHandler } from './server';

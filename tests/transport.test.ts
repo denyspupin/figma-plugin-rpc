@@ -1,3 +1,4 @@
+// jsdom environment required: FigmaUiTransport uses window.addEventListener / window.postMessage
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FigmaMainTransport, FigmaUiTransport } from '../src';
@@ -75,11 +76,15 @@ describe('FigmaUiTransport', () => {
 
 describe('FigmaMainTransport', () => {
 	let mockPostMessage: ReturnType<typeof vi.fn>;
+	let currentOnMessage: ((msg: unknown) => void) | undefined;
 	let mockOnMessageSetter: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
 		mockPostMessage = vi.fn();
-		mockOnMessageSetter = vi.fn();
+		currentOnMessage = undefined;
+		mockOnMessageSetter = vi.fn((fn: (msg: unknown) => void) => {
+			currentOnMessage = fn;
+		});
 
 		vi.stubGlobal('figma', {
 			ui: {
@@ -88,7 +93,7 @@ describe('FigmaMainTransport', () => {
 					mockOnMessageSetter(fn);
 				},
 				get onmessage() {
-					return undefined;
+					return currentOnMessage;
 				},
 			},
 		});
@@ -121,16 +126,38 @@ describe('FigmaMainTransport', () => {
 		expect(handler).toHaveBeenCalledWith(message);
 	});
 
-	it('unsubscribe clears figma.ui.onmessage when last handler removed', () => {
+	it('unsubscribe restores original onmessage when last handler removed', () => {
+		const originalHandler = vi.fn();
+		figma.ui.onmessage = originalHandler;
+
 		const transport = new FigmaMainTransport();
 		const handler = vi.fn();
 		const unsub = transport.onMessage(handler);
 
 		unsub();
 
-		expect(mockOnMessageSetter).toHaveBeenCalledTimes(2);
-		const clearFn = mockOnMessageSetter.mock.calls[1][0] as () => void;
-		expect(clearFn).toEqual(expect.any(Function));
+		expect(figma.ui.onmessage).toBe(originalHandler);
+	});
+
+	it('unsubscribe sets a no-op when no original onmessage existed', () => {
+		const transport = new FigmaMainTransport();
+		const handler = vi.fn();
+		const unsub = transport.onMessage(handler);
+
+		unsub();
+
+		expect(figma.ui.onmessage).toEqual(expect.any(Function));
+		expect(() => (figma.ui.onmessage as (msg: unknown) => void)({})).not.toThrow();
+	});
+
+	it('does not clobber pre-existing onmessage when subscribing', () => {
+		const originalHandler = vi.fn();
+		figma.ui.onmessage = originalHandler;
+
+		const transport = new FigmaMainTransport();
+		transport.onMessage(vi.fn());
+
+		expect(figma.ui.onmessage).not.toBe(originalHandler);
 	});
 
 	it('multiple subscribers share single figma.ui.onmessage', () => {

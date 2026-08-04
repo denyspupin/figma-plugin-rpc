@@ -10,7 +10,7 @@ import type {
 	RpcResponseMessage,
 } from './types';
 import { isRpcRequest } from './types';
-import { noopLogger, type Logger } from './transport';
+import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 
 type RpcHandler<Schema extends RpcProcedureSchema, T extends RpcProcedure<Schema>> = (
@@ -79,7 +79,7 @@ class RpcServer<
 		return this;
 	}
 
-	async processMessage(msg: unknown): Promise<boolean> {
+	private async processMessage(msg: unknown): Promise<boolean> {
 		if (!isRpcRequest(msg)) {
 			return false;
 		}
@@ -105,7 +105,7 @@ class RpcServer<
 			);
 
 			this.config.logger.debug(
-				`[RpcServer] "${procedure}" completed in ${Date.now() - startTime}ms`,
+				`[RpcServer] "${procedure}" completed in ${formatDuration(Date.now() - startTime)}`,
 			);
 
 			this.sendResponse(
@@ -180,4 +180,4 @@ function createRpcServer<
 }
 
 export { RpcServer, createRpcServer };
-export type { RpcServerConfig as ServerConfig, RpcHandler as ServerHandler };
+export type { RpcHandler };

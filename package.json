@@ -1,6 +1,6 @@
 {
 	"name": "figma-plugin-rpc",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Type-safe RPC for Figma plugins — request/response procedures and server→client notifications over postMessage, with built-in Figma transports.",
 	"type": "module",
 	"main": "./dist/index.cjs",
@@ -34,7 +34,17 @@
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"prepublishOnly": "npm run build"
+		"prepublishOnly": "npm run build",
+		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*.{js,ts}": [
+			"npm run lint -- --fix",
+			"npm run format"
+		],
+		"*.{json,md,yml,yaml}": [
+			"npm run format"
+		]
 	},
 	"keywords": [
 		"figma",
@@ -67,6 +77,7 @@
 		"eslint": "^10.8.0",
 		"husky": "^9.1.7",
 		"jsdom": "30.0.1",
+		"lint-staged": "17.3.0",
 		"prettier": "^3.9.6",
 		"tsup": "^8.4.0",
 		"typescript": "~5.6.2",
