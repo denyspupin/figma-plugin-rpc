@@ -1,5 +1,10 @@
 # figma-plugin-rpc
 
+[![npm version](https://img.shields.io/npm/v/figma-plugin-rpc)](https://www.npmjs.com/package/figma-plugin-rpc)
+[![npm downloads](https://img.shields.io/npm/dm/figma-plugin-rpc)](https://www.npmjs.com/package/figma-plugin-rpc)
+[![CI](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/denyspupin/figma-plugin-rpc)](./LICENSE)
+
 > Type-safe RPC for Figma plugins — request/response procedures and server→client notifications over postMessage, with built-in Figma transports.
 
 A transport-agnostic, schema-driven RPC layer for Figma plugins. Provides typed request/response procedures and streaming notifications between the plugin main thread and the UI iframe, with built-in Figma transports and pluggable transports for any `postMessage` environment.
