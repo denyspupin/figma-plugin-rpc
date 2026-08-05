@@ -1,9 +1,9 @@
 # figma-plugin-rpc
 
-[![npm version](https://img.shields.io/npm/v/figma-plugin-rpc)](https://www.npmjs.com/package/figma-plugin-rpc)
-[![npm downloads](https://img.shields.io/npm/dm/figma-plugin-rpc)](https://www.npmjs.com/package/figma-plugin-rpc)
+[![npm version](https://img.shields.io/npm/v/figma-plugin-rpc?cacheSeconds=0)](https://www.npmjs.com/package/figma-plugin-rpc)
+[![npm downloads](https://img.shields.io/npm/dm/figma-plugin-rpc?cacheSeconds=0)](https://www.npmjs.com/package/figma-plugin-rpc)
 [![CI](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/denyspupin/figma-plugin-rpc)](./LICENSE)
+[![License](https://img.shields.io/github/license/denyspupin/figma-plugin-rpc?cacheSeconds=0)](./LICENSE)
 
 > Type-safe RPC for Figma plugins — request/response procedures and server→client notifications over postMessage, with built-in Figma transports.
 
