@@ -599,20 +599,6 @@ const rpc = createRpcServer<Procedures, Notifications>(transport, {
 });
 ```
 
-## Compatibility
-
-### Wire format
-
-The 0.x wire format (messages without a version field) is fully supported. The library treats absent `v` as version 1, so old clients and servers continue to work.
-
-### TypeScript
-
-Requires TypeScript 5.0 or later for full type inference.
-
-### Figma plugin typings
-
-The built-in transports (`FigmaUiTransport`, `FigmaMainTransport`) require `@figma/plugin-typings` as a peer dependency. If you're using custom transports, this dependency is optional.
-
 ## License
 
 MIT
