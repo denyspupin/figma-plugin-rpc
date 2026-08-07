@@ -16,6 +16,9 @@ Type-safe RPC between Figma's main thread and UI iframe. Define procedures once,
 - [Core concepts](#core-concepts)
 - [API reference](#api-reference)
 - [Guides](#guides)
+- [Compile-time safety](#compile-time-safety)
+- [Protocol versioning](#protocol-versioning)
+- [Custom transports](#custom-transports)
 - [License](#license)
 
 ## Why?
@@ -42,9 +45,10 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 | Async handlers      | Return promises from handlers, await on the client                 |
 | Notifications       | Fire-and-forget messages from server to client                     |
 | Timeouts            | Per-call or global timeout with clear error messages               |
-| Cancellation        | Cancel pending calls with `AbortSignal`                            |
-| Structured errors   | Throw `RpcError` with code and data, catch with type safety        |
+| Cancellation        | Stop awaiting with `AbortSignal` (client-side only)                |
+| Structured errors   | Throw `RpcError` with code and data; check `instanceof` on client  |
 | Runtime validation  | Validate payloads before handlers execute                          |
+| Protocol decoding   | All wire messages are validated before reaching client/server      |
 | Protocol versioning | Wire format includes version field for future upgrades             |
 
 ## Install
@@ -190,18 +194,21 @@ The library is transport-agnostic. Built-in transports handle Figma's `postMessa
 ### Schema types
 
 ```ts
-interface RpcProcedureSchema {
-	[procedureName: string]: {
-		request: unknown; // Use `void` for no payload
-		response: unknown;
-		error?: unknown; // Optional typed error
+// Marker interfaces — extend these with your concrete procedures/notifications
+interface RpcProcedureSchema {}
+interface RpcNotificationSchema {}
+
+// Your schema preserves literal procedure names
+interface Procedures extends RpcProcedureSchema {
+	'create-node': {
+		request: { type: 'rectangle' | 'ellipse'; x: number; y: number };
+		response: { nodeId: string };
+		error?: { code: string; message: string }; // optional typed error shape
 	};
 }
-
-interface RpcNotificationSchema {
-	[notificationName: string]: unknown;
-}
 ```
+
+> **Note:** The `error` member in a procedure definition is a type-level contract. You can extract it with `RpcProcedureError<Procedures, 'create-node'>`, but TypeScript `catch` values are always `unknown`. Use `instanceof RpcError` to narrow.
 
 ### `createRpcClient(transport, config?)`
 
@@ -277,7 +284,7 @@ rpc.start();
 
 ### `RpcError`
 
-Structured error with code and optional data.
+Structured error with code and optional data. Throw in handlers, check with `instanceof` on the client.
 
 ```ts
 import { RpcError } from 'figma-plugin-rpc';
@@ -292,7 +299,7 @@ rpc.registerHandler('delete-node', ({ nodeId }) => {
 	return { success: true };
 });
 
-// Catch on client
+// Catch on client — TypeScript catch values are `unknown`
 try {
 	await rpc.call('delete-node', { nodeId: '123:456' });
 } catch (error) {
@@ -330,7 +337,7 @@ try {
 
 #### Structured errors with RpcError
 
-Use `RpcError` to throw typed errors with a code and optional data:
+Use `RpcError` to throw errors with a code and optional data. Check with `instanceof` on the client:
 
 ```ts
 // Server
@@ -349,7 +356,7 @@ rpc.registerHandler('delete-node', ({ nodeId }) => {
 	return { success: true };
 });
 
-// Client
+// Client — catch is `unknown`, narrow with instanceof
 try {
 	await rpc.call('delete-node', { nodeId: '123:456' });
 } catch (error) {
@@ -363,6 +370,8 @@ try {
 	}
 }
 ```
+
+> The `error` field in your procedure schema is a type-level contract extractable with `RpcProcedureError`. At runtime, always use `instanceof RpcError` to check and `error.code` to discriminate.
 
 #### Global error handler
 
@@ -418,7 +427,9 @@ try {
 
 ### Cancellation with AbortSignal
 
-Cancel in-flight requests using `AbortController`:
+Use `AbortController` to stop awaiting a request on the client side.
+
+> **Important:** Aborting cancels the client's wait for the response. The server handler **continues executing** — there is no server-side cancellation protocol. Use abort for UI responsiveness (e.g., superseded searches), not for stopping expensive server work.
 
 ```ts
 // Create a controller
@@ -436,7 +447,7 @@ try {
 	await promise;
 } catch (error) {
 	if (error.name === 'AbortError') {
-		console.log('Request was cancelled');
+		console.log('Stopped awaiting (server may still be running)');
 	}
 }
 ```
@@ -597,6 +608,54 @@ const rpc = createRpcServer<Procedures, Notifications>(transport, {
 	},
 });
 ```
+
+### Compile-time safety
+
+The schema types preserve literal procedure and notification names. Unknown names fail at compile time:
+
+```ts
+// OK — known procedure
+await rpc.call('get-selection');
+
+// Compile error — unknown procedure
+await rpc.call('typo-procedure'); // Error!
+
+// Compile error — wrong payload type
+await rpc.call('create-rectangle', { x: 'not a number' }); // Error!
+```
+
+### Protocol versioning
+
+The wire protocol includes a version field (`v: 1`). The library:
+
+- **Sends** version 1 on all outgoing messages
+- **Accepts** messages with `v: 1` or no `v` (legacy compatibility)
+- **Rejects** messages with unsupported versions (e.g., `v: 2`)
+
+Malformed messages are silently ignored with a debug log entry.
+
+### Custom transports
+
+Implement `RpcTransport` to create your own transport:
+
+```ts
+import type { RpcTransport } from 'figma-plugin-rpc';
+
+class MyTransport implements RpcTransport {
+	send(message: unknown): void {
+		// Send message to peer
+	}
+
+	onMessage(handler: (message: unknown) => void): () => void {
+		// Register handler, return unsubscribe function
+		return () => {
+			// Cleanup
+		};
+	}
+}
+```
+
+> **Security note:** `FigmaUiTransport` validates `event.source === parent` before accepting messages. Custom transports should implement equivalent source validation when receiving messages from untrusted contexts.
 
 ## License
 
