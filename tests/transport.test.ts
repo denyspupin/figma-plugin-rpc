@@ -14,6 +14,15 @@ describe('FigmaUiTransport', () => {
 		postMessageSpy.mockRestore();
 	});
 
+	function dispatchFromParent(data: unknown) {
+		window.dispatchEvent(new MessageEvent('message', { data, source: window.parent }));
+	}
+
+	function dispatchFromOther(data: unknown) {
+		const fakeSource = {} as Window;
+		window.dispatchEvent(new MessageEvent('message', { data, source: fakeSource }));
+	}
+
 	it('send wraps message in pluginMessage envelope', () => {
 		const transport = new FigmaUiTransport();
 		const message = { __rpc: true, id: '1', procedure: 'test', payload: {} };
@@ -23,15 +32,25 @@ describe('FigmaUiTransport', () => {
 		expect(postMessageSpy).toHaveBeenCalledWith({ pluginMessage: message }, '*');
 	});
 
-	it('onMessage unwraps pluginMessage and calls handler', () => {
+	it('onMessage accepts messages from parent window', () => {
 		const transport = new FigmaUiTransport();
 		const handler = vi.fn();
 		transport.onMessage(handler);
 
 		const message = { __rpc: true, id: '1', procedure: 'test', response: {} };
-		window.dispatchEvent(new MessageEvent('message', { data: { pluginMessage: message } }));
+		dispatchFromParent({ pluginMessage: message });
 
 		expect(handler).toHaveBeenCalledWith(message);
+	});
+
+	it('onMessage ignores messages from other windows', () => {
+		const transport = new FigmaUiTransport();
+		const handler = vi.fn();
+		transport.onMessage(handler);
+
+		dispatchFromOther({ pluginMessage: { test: true } });
+
+		expect(handler).not.toHaveBeenCalled();
 	});
 
 	it('onMessage ignores messages without pluginMessage', () => {
@@ -39,7 +58,7 @@ describe('FigmaUiTransport', () => {
 		const handler = vi.fn();
 		transport.onMessage(handler);
 
-		window.dispatchEvent(new MessageEvent('message', { data: { other: true } }));
+		dispatchFromParent({ other: true });
 
 		expect(handler).not.toHaveBeenCalled();
 	});
@@ -51,26 +70,34 @@ describe('FigmaUiTransport', () => {
 
 		unsub();
 
-		window.dispatchEvent(
-			new MessageEvent('message', { data: { pluginMessage: { test: true } } }),
-		);
+		dispatchFromParent({ pluginMessage: { test: true } });
 
 		expect(handler).not.toHaveBeenCalled();
 	});
 
-	it('multiple subscribers all receive messages', () => {
+	it('multiple subscribers share one native listener', () => {
 		const transport = new FigmaUiTransport();
 		const handler1 = vi.fn();
 		const handler2 = vi.fn();
 		transport.onMessage(handler1);
 		transport.onMessage(handler2);
 
-		window.dispatchEvent(
-			new MessageEvent('message', { data: { pluginMessage: { test: true } } }),
-		);
+		dispatchFromParent({ pluginMessage: { test: true } });
 
 		expect(handler1).toHaveBeenCalled();
 		expect(handler2).toHaveBeenCalled();
+	});
+
+	it('removing the final subscriber removes the native listener', () => {
+		const removeSpy = vi.spyOn(window, 'removeEventListener');
+		const transport = new FigmaUiTransport();
+		const handler = vi.fn();
+		const unsub = transport.onMessage(handler);
+
+		unsub();
+
+		expect(removeSpy).toHaveBeenCalledWith('message', expect.any(Function));
+		removeSpy.mockRestore();
 	});
 });
 

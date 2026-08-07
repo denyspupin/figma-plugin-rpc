@@ -42,6 +42,10 @@ export class FigmaUiTransport implements RpcTransport {
 
 		if (!this.listener) {
 			this.listener = (event: MessageEvent) => {
+				if (event.source !== parent) {
+					return;
+				}
+
 				const msg = event.data?.pluginMessage;
 				if (msg !== undefined) {
 					for (const h of this.handlers) {
