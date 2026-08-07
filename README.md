@@ -32,9 +32,8 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 - **Streaming notifications** — Server-to-client pub/sub for progress, selection changes, etc.
 - **Structured errors** — Typed error codes and data with `RpcError`
 - **Cancellation** — Abort in-flight calls with `AbortSignal`
-- **Validation** — Pluggable runtime validation (zod, valibot, or hand-written)
+- **Validation** — Pluggable runtime validation (e.g., zod)
 - **Zero config** — Built-in transports work out of the box
-- **Transport-agnostic** — Swap in WebSocket, Worker, or any `postMessage` environment
 
 ## Features
 
@@ -47,7 +46,6 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 | Cancellation        | Cancel pending calls with `AbortSignal`                            |
 | Structured errors   | Throw `RpcError` with code and data, catch with type safety        |
 | Runtime validation  | Validate payloads before handlers execute                          |
-| Custom transports   | Implement `RpcTransport` for any messaging environment             |
 | Protocol versioning | Wire format includes version field for future upgrades             |
 
 ## Install
@@ -556,118 +554,6 @@ const rpc = createRpcServer<Procedures, Notifications>(transport, {
 		}
 	},
 });
-```
-
-#### With Valibot
-
-```ts
-import * as v from 'valibot';
-import { RpcError } from 'figma-plugin-rpc';
-
-const validators = {
-	'create-rectangle': v.object({
-		x: v.number(),
-		y: v.number(),
-		width: v.pipe(v.number(), v.minValue(0)),
-		height: v.pipe(v.number(), v.minValue(0)),
-	}),
-};
-
-const rpc = createRpcServer<Procedures, Notifications>(transport, {
-	validator: (procedure, payload) => {
-		const schema = validators[procedure];
-		if (!schema) return;
-
-		const result = v.safeParse(schema, payload);
-		if (!result.success) {
-			return new RpcError('VALIDATION_ERROR', result.issues.map((i) => i.message).join(', '));
-		}
-	},
-});
-```
-
-#### Hand-written validator
-
-No dependencies required:
-
-```ts
-const rpc = createRpcServer<Procedures, Notifications>(transport, {
-	validator: (procedure, payload) => {
-		if (procedure === 'create-rectangle') {
-			const { x, y, width, height } = payload as any;
-
-			if (typeof x !== 'number' || typeof y !== 'number') {
-				return new RpcError('VALIDATION_ERROR', 'x and y must be numbers');
-			}
-			if (width <= 0 || height <= 0) {
-				return new RpcError('VALIDATION_ERROR', 'width and height must be positive');
-			}
-		}
-	},
-});
-```
-
-### Custom transports
-
-Implement `RpcTransport` for any messaging environment:
-
-```ts
-import type { RpcTransport } from 'figma-plugin-rpc';
-
-class WebSocketTransport implements RpcTransport {
-	private handlers = new Set<(message: unknown) => void>();
-
-	constructor(private ws: WebSocket) {
-		ws.addEventListener('message', (event) => {
-			const data = JSON.parse(event.data);
-			this.handlers.forEach((h) => h(data));
-		});
-	}
-
-	send(message: unknown): void {
-		this.ws.send(JSON.stringify(message));
-	}
-
-	onMessage(handler: (message: unknown) => void): () => void {
-		this.handlers.add(handler);
-		return () => this.handlers.delete(handler);
-	}
-}
-
-// Use it
-const ws = new WebSocket('wss://example.com/rpc');
-const rpc = createRpcClient<Procedures, Notifications>(new WebSocketTransport(ws));
-rpc.init();
-```
-
-#### Web Worker transport
-
-```ts
-class WorkerTransport implements RpcTransport {
-	private handlers = new Set<(message: unknown) => void>();
-
-	constructor(private worker: Worker) {
-		worker.addEventListener('message', (event) => {
-			this.handlers.forEach((h) => h(event.data));
-		});
-	}
-
-	send(message: unknown): void {
-		this.worker.postMessage(message);
-	}
-
-	onMessage(handler: (message: unknown) => void): () => void {
-		this.handlers.add(handler);
-		return () => this.handlers.delete(handler);
-	}
-}
-
-// In main thread
-const worker = new Worker('./worker.ts');
-const rpc = createRpcClient<Procedures, Notifications>(new WorkerTransport(worker));
-
-// In worker
-const rpc = createRpcServer<Procedures, Notifications>(new WorkerTransport(self as any));
 ```
 
 ### Notifications
