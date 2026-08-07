@@ -511,4 +511,69 @@ describe('RpcClient', () => {
 			expect(transport.getSentCount()).toBe(0);
 		});
 	});
+
+	describe('Structured errors', () => {
+		it('rejects with RpcError when response has code', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Item not found',
+				code: 'NOT_FOUND',
+				data: { id: 42 },
+			});
+
+			await expect(promise).rejects.toThrow('Item not found');
+			await expect(promise).rejects.toThrow(
+				expect.objectContaining({
+					name: 'RpcError',
+					code: 'NOT_FOUND',
+					data: { id: 42 },
+				}),
+			);
+		});
+
+		it('rejects with plain Error when response has no code (back-compat)', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Data not found',
+			});
+
+			await expect(promise).rejects.toThrow('Data not found');
+			await expect(promise).rejects.toThrow(
+				expect.objectContaining({
+					name: 'Error',
+				}),
+			);
+		});
+
+		it('rejects with RpcError without data when data is not provided', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Access denied',
+				code: 'FORBIDDEN',
+			});
+
+			await expect(promise).rejects.toThrow('Access denied');
+			await expect(promise).rejects.toThrow(
+				expect.objectContaining({
+					name: 'RpcError',
+					code: 'FORBIDDEN',
+				}),
+			);
+		});
+	});
 });

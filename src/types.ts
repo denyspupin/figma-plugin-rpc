@@ -2,6 +2,7 @@ export interface RpcProcedureSchema {
 	[name: string]: {
 		request: unknown;
 		response: unknown;
+		error?: unknown;
 	};
 }
 
@@ -24,6 +25,11 @@ export type RpcResponse<
 	Schema extends RpcProcedureSchema,
 	T extends RpcProcedure<Schema>,
 > = Schema[T]['response'];
+
+export type RpcProcedureError<
+	Schema extends RpcProcedureSchema,
+	T extends RpcProcedure<Schema>,
+> = Schema[T] extends { error: infer E } ? E : never;
 
 export type RpcNotificationPayload<
 	Schema extends RpcNotificationSchema,
@@ -60,6 +66,8 @@ export type RpcResponseMessage<
 			id: string;
 			procedure: T;
 			error: string;
+			code?: string;
+			data?: unknown;
 	  };
 
 export interface RpcNotificationMessage<

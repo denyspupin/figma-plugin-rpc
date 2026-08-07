@@ -12,6 +12,7 @@ import type {
 import { isRpcRequest, PROTOCOL_VERSION } from './types';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
+import { RpcError } from './error';
 
 type RpcHandler<Schema extends RpcProcedureSchema, T extends RpcProcedure<Schema>> = (
 	payload: RpcRequest<Schema, T>,
@@ -115,7 +116,8 @@ class RpcServer<
 			);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
-			this.sendError(id, procedure, errorMessage);
+			const rpcError = error instanceof RpcError ? error : undefined;
+			this.sendError(id, procedure, errorMessage, rpcError);
 			this.config.logger.error(`[RpcServer] Error in "${procedure}":`, error);
 
 			if (this.config.onError) {
@@ -159,13 +161,14 @@ class RpcServer<
 		this.transport.send(message);
 	}
 
-	private sendError(id: string, procedure: string, error: string): void {
+	private sendError(id: string, procedure: string, error: string, rpcError?: RpcError): void {
 		const message: RpcResponseMessage = {
 			__rpc: true,
 			v: PROTOCOL_VERSION,
 			id,
 			procedure,
 			error,
+			...(rpcError && { code: rpcError.code, data: rpcError.data }),
 		};
 
 		this.transport.send(message);
