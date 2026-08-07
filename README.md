@@ -304,15 +304,6 @@ try {
 }
 ```
 
-### `PROTOCOL_VERSION`
-
-The current protocol version (currently `1`). Useful for debugging or custom transport implementations.
-
-```ts
-import { PROTOCOL_VERSION } from 'figma-plugin-rpc';
-console.log(PROTOCOL_VERSION); // 1
-```
-
 ## Guides
 
 ### Error handling
