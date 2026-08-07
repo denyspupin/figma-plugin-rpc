@@ -480,5 +480,35 @@ describe('RpcClient', () => {
 
 			await expect(promise2).resolves.toEqual({ result: 7 });
 		});
+
+		it('handles signal without addEventListener gracefully', async () => {
+			const mockSignal = {
+				aborted: false,
+			} as AbortSignal;
+
+			const promise = client.call('add', { a: 1, b: 2 }, { signal: mockSignal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'add',
+				response: { result: 3 },
+			});
+
+			await expect(promise).resolves.toEqual({ result: 3 });
+		});
+
+		it('rejects immediately if signal.aborted is true without addEventListener', async () => {
+			const mockSignal = {
+				aborted: true,
+			} as AbortSignal;
+
+			const promise = client.call('slow', undefined, { signal: mockSignal });
+
+			await expect(promise).rejects.toThrow(/aborted/);
+			await expect(promise).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+			expect(transport.getSentCount()).toBe(0);
+		});
 	});
 });

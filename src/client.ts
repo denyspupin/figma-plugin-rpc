@@ -131,21 +131,23 @@ class RpcClient<
 					return;
 				}
 
-				const abortHandler = () => {
-					if (this.pending.has(id)) {
-						this.pending.delete(id);
-						clearTimeout(timeoutId);
-						const error = new Error(`RPC call "${procedure}" was aborted`);
-						error.name = 'AbortError';
-						reject(error);
-					}
-				};
+				if (typeof signal.addEventListener === 'function') {
+					const abortHandler = () => {
+						if (this.pending.has(id)) {
+							this.pending.delete(id);
+							clearTimeout(timeoutId);
+							const error = new Error(`RPC call "${procedure}" was aborted`);
+							error.name = 'AbortError';
+							reject(error);
+						}
+					};
 
-				signal.addEventListener('abort', abortHandler, { once: true });
+					signal.addEventListener('abort', abortHandler, { once: true });
 
-				cleanupAbort = () => {
-					signal.removeEventListener('abort', abortHandler);
-				};
+					cleanupAbort = () => {
+						signal.removeEventListener('abort', abortHandler);
+					};
+				}
 			}
 
 			this.pending.set(id, {
