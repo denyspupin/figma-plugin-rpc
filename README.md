@@ -16,7 +16,6 @@ Type-safe RPC between Figma's main thread and UI iframe. Define procedures once,
 - [Core concepts](#core-concepts)
 - [API reference](#api-reference)
 - [Guides](#guides)
-- [Compatibility](#compatibility)
 - [License](#license)
 
 ## Why?
