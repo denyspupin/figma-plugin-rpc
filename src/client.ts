@@ -8,9 +8,9 @@ import type {
 	RpcRequest,
 	RpcRequestMessage,
 	RpcResponse,
-	RpcResponseMessage,
 } from './types';
-import { isRpcNotification, isRpcResponse, PROTOCOL_VERSION } from './types';
+import { PROTOCOL_VERSION } from './types';
+import { decodeRpcMessage, type DecodedRpcResponse } from './protocol';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
@@ -194,22 +194,45 @@ class RpcClient<
 	}
 
 	private onMessage(msg: unknown): void {
-		if (isRpcResponse(msg)) {
-			this.handleResponse(msg);
+		const decoded = decodeRpcMessage(msg);
+
+		if (!decoded.ok) {
+			this.config.logger.debug(
+				`[RpcClient] Ignoring malformed message: ${decoded.error.reason}`,
+			);
 			return;
 		}
 
-		if (isRpcNotification(msg)) {
-			this.handleNotification(msg.notification, msg.payload);
+		const value = decoded.value;
+
+		if (value.kind === 'response') {
+			this.handleDecodedResponse(value);
+			return;
+		}
+
+		if (value.kind === 'notification') {
+			this.handleNotification(value.notification, value.payload);
 			return;
 		}
 	}
 
-	private handleResponse(msg: RpcResponseMessage): void {
-		const { id, procedure } = msg;
+	private handleDecodedResponse(decoded: DecodedRpcResponse): void {
+		const { id, procedure } = decoded;
 		const pending = this.pending.get(id);
 
 		if (!pending) {
+			return;
+		}
+
+		if (pending.procedure !== procedure) {
+			clearTimeout(pending.timeoutId);
+			pending.cleanupAbort?.();
+			this.pending.delete(id);
+			pending.reject(
+				new Error(
+					`Protocol error: response procedure "${procedure}" does not match pending "${pending.procedure}" for id "${id}"`,
+				),
+			);
 			return;
 		}
 
@@ -219,18 +242,19 @@ class RpcClient<
 
 		const duration = Date.now() - pending.startTime;
 
-		if ('error' in msg) {
-			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${msg.error}`);
-			if ('code' in msg && msg.code) {
-				pending.reject(new RpcError(msg.code, msg.error, msg.data));
+		if (!decoded.success) {
+			const error = decoded.error ?? 'Unknown error';
+			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${error}`);
+			if (decoded.code) {
+				pending.reject(new RpcError(decoded.code, error, decoded.data));
 			} else {
-				pending.reject(new Error(msg.error));
+				pending.reject(new Error(error));
 			}
 		} else {
 			this.config.logger.debug(
 				`[RpcClient] "${procedure}" completed in ${formatDuration(duration)}`,
 			);
-			pending.resolve(msg.response);
+			pending.resolve(decoded.response as RpcResponse<Procedures, RpcProcedure<Procedures>>);
 		}
 	}
 

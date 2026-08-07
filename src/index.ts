@@ -14,6 +14,21 @@ export type {
 
 export { isRpcRequest, isRpcResponse, isRpcNotification, PROTOCOL_VERSION } from './types';
 
+export {
+	decodeRpcMessage,
+	isValidRpcRequest,
+	isValidRpcResponse,
+	isValidRpcNotification,
+} from './protocol';
+export type {
+	DecodedRpcMessage,
+	DecodedRpcRequest,
+	DecodedRpcResponse,
+	DecodedRpcNotification,
+	DecodeResult,
+	DecodeError,
+} from './protocol';
+
 export type { RpcTransport, Logger } from './transport';
 export { noopLogger, FigmaUiTransport, FigmaMainTransport, formatDuration } from './transport';
 

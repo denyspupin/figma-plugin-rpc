@@ -72,7 +72,7 @@ describe('RpcClient', () => {
 		await expect(promise).rejects.toThrow('Data not found');
 	});
 
-	it('error wins when both response and error are present', async () => {
+	it('ignores malformed response with both response and error', async () => {
 		const promise = client.call('get-data');
 
 		const sent = transport.getLastSent() as { id: string };
@@ -84,7 +84,9 @@ describe('RpcClient', () => {
 			error: 'Something went wrong',
 		});
 
-		await expect(promise).rejects.toThrow('Something went wrong');
+		await new Promise((r) => setTimeout(r, 10));
+		expect(client.getPendingCount()).toBe(1);
+		promise.catch(() => {});
 	});
 
 	it('ignores responses for unknown ids', () => {

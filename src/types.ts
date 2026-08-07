@@ -80,34 +80,63 @@ export interface RpcNotificationMessage<
 	payload: RpcNotificationPayload<Schema, T>;
 }
 
+function hasOwn(obj: object, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSupportedVersion(v: unknown): boolean {
+	if (v === undefined) return true;
+	return v === PROTOCOL_VERSION;
+}
+
 export function isRpcRequest(msg: unknown): msg is RpcRequestMessage {
-	return (
-		typeof msg === 'object' &&
-		msg !== null &&
-		'__rpc' in msg &&
-		(msg as Record<string, unknown>).__rpc === true &&
-		'procedure' in msg &&
-		'payload' in msg
-	);
+	if (!isPlainObject(msg)) return false;
+	if (!hasOwn(msg, '__rpc') || msg.__rpc !== true) return false;
+	if (!hasOwn(msg, 'id') || typeof msg.id !== 'string' || msg.id.length === 0) return false;
+	if (
+		!hasOwn(msg, 'procedure') ||
+		typeof msg.procedure !== 'string' ||
+		msg.procedure.length === 0
+	)
+		return false;
+	if (!hasOwn(msg, 'payload')) return false;
+	if (!isSupportedVersion(msg.v)) return false;
+	return true;
 }
 
 export function isRpcResponse(msg: unknown): msg is RpcResponseMessage {
-	return (
-		typeof msg === 'object' &&
-		msg !== null &&
-		'__rpc' in msg &&
-		(msg as Record<string, unknown>).__rpc === true &&
-		'id' in msg &&
-		'procedure' in msg &&
-		('response' in msg || 'error' in msg)
-	);
+	if (!isPlainObject(msg)) return false;
+	if (!hasOwn(msg, '__rpc') || msg.__rpc !== true) return false;
+	if (!hasOwn(msg, 'id') || typeof msg.id !== 'string' || msg.id.length === 0) return false;
+	if (
+		!hasOwn(msg, 'procedure') ||
+		typeof msg.procedure !== 'string' ||
+		msg.procedure.length === 0
+	)
+		return false;
+	if (!isSupportedVersion(msg.v)) return false;
+	const hasResponse = hasOwn(msg, 'response');
+	const hasError = hasOwn(msg, 'error');
+	if (hasResponse === hasError) return false;
+	if (hasError && typeof msg.error !== 'string') return false;
+	if (hasOwn(msg, 'code') && typeof msg.code !== 'string') return false;
+	return true;
 }
 
 export function isRpcNotification(msg: unknown): msg is RpcNotificationMessage {
-	return (
-		typeof msg === 'object' &&
-		msg !== null &&
-		'__rpcNotification' in msg &&
-		(msg as Record<string, unknown>).__rpcNotification === true
-	);
+	if (!isPlainObject(msg)) return false;
+	if (!hasOwn(msg, '__rpcNotification') || msg.__rpcNotification !== true) return false;
+	if (
+		!hasOwn(msg, 'notification') ||
+		typeof msg.notification !== 'string' ||
+		msg.notification.length === 0
+	)
+		return false;
+	if (!hasOwn(msg, 'payload')) return false;
+	if (!isSupportedVersion(msg.v)) return false;
+	return true;
 }
