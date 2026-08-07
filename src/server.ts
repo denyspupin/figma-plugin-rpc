@@ -9,7 +9,8 @@ import type {
 	RpcResponse,
 	RpcResponseMessage,
 } from './types';
-import { isRpcRequest, PROTOCOL_VERSION } from './types';
+import { PROTOCOL_VERSION } from './types';
+import { decodeRpcMessage } from './protocol';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
@@ -90,16 +91,26 @@ class RpcServer<
 	}
 
 	private processMessage(msg: unknown): void | Promise<void> {
-		if (!isRpcRequest(msg)) {
+		const decoded = decodeRpcMessage(msg);
+
+		if (!decoded.ok) {
+			this.safeLog(
+				'debug',
+				`[RpcServer] Ignoring malformed message: ${decoded.error.reason}`,
+			);
 			return;
 		}
 
-		const { id, procedure } = msg;
+		const value = decoded.value;
+
+		if (value.kind !== 'request') {
+			return;
+		}
+
 		const startTime = Date.now();
+		this.safeLog('debug', `[RpcServer] "${value.procedure}"`);
 
-		this.safeLog('debug', `[RpcServer] "${procedure}"`);
-
-		return this.executeHandler(id, procedure, msg.payload, startTime);
+		return this.executeHandler(value.id, value.procedure, value.payload, startTime);
 	}
 
 	private async executeHandler(

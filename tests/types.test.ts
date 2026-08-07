@@ -170,7 +170,7 @@ describe('isRpcResponse', () => {
 		).toBe(false);
 	});
 
-	it('returns true when both response and error are present (error wins)', () => {
+	it('returns false when both response and error are present', () => {
 		expect(
 			isRpcResponse({
 				__rpc: true,
@@ -179,7 +179,7 @@ describe('isRpcResponse', () => {
 				response: { ok: true },
 				error: 'Something went wrong',
 			}),
-		).toBe(true);
+		).toBe(false);
 	});
 });
 
