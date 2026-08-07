@@ -7,7 +7,13 @@ export default defineConfig([
 	js.configs.recommended,
 	...tseslint.configs.recommended,
 
-	globalIgnores(['node_modules/**', 'dist/**', '*.config.{js,ts}']),
+	globalIgnores([
+		'node_modules/**',
+		'dist/**',
+		'coverage/**',
+		'*.config.{js,ts}',
+		'tests/package/**',
+	]),
 
 	{
 		languageOptions: {
