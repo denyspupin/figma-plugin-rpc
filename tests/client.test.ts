@@ -72,6 +72,21 @@ describe('RpcClient', () => {
 		await expect(promise).rejects.toThrow('Data not found');
 	});
 
+	it('error wins when both response and error are present', async () => {
+		const promise = client.call('get-data');
+
+		const sent = transport.getLastSent() as { id: string };
+		transport.deliver({
+			__rpc: true,
+			id: sent.id,
+			procedure: 'get-data',
+			response: { data: 'ok' },
+			error: 'Something went wrong',
+		});
+
+		await expect(promise).rejects.toThrow('Something went wrong');
+	});
+
 	it('ignores responses for unknown ids', () => {
 		client.call('add', { a: 1, b: 2 }).catch(() => {});
 		expect(client.getPendingCount()).toBe(1);
@@ -245,5 +260,46 @@ describe('RpcClient', () => {
 
 		client.call('get-data').catch(() => {});
 		expect(client.getPendingCount()).toBe(2);
+	});
+
+	it('destroy clears notification handlers', () => {
+		const handler = vi.fn();
+		client.on('progress', handler);
+
+		client.destroy();
+		client.init();
+
+		transport.deliver({
+			__rpcNotification: true,
+			notification: 'progress',
+			payload: { percent: 50 },
+		});
+
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it('unsubscribe prunes empty handler sets', () => {
+		const handler = vi.fn();
+		const unsub = client.on('progress', handler);
+		unsub();
+
+		transport.deliver({
+			__rpcNotification: true,
+			notification: 'progress',
+			payload: { percent: 50 },
+		});
+
+		expect(handler).not.toHaveBeenCalled();
+
+		const newHandler = vi.fn();
+		client.on('progress', newHandler);
+
+		transport.deliver({
+			__rpcNotification: true,
+			notification: 'progress',
+			payload: { percent: 75 },
+		});
+
+		expect(newHandler).toHaveBeenCalledWith({ percent: 75 });
 	});
 });

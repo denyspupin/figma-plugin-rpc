@@ -119,6 +119,16 @@ describe('isRpcResponse', () => {
 		).toBe(false);
 	});
 
+	it('returns false for response without procedure', () => {
+		expect(
+			isRpcResponse({
+				__rpc: true,
+				id: 'abc',
+				response: {},
+			}),
+		).toBe(false);
+	});
+
 	it('returns false for __rpc !== true', () => {
 		expect(
 			isRpcResponse({
@@ -128,6 +138,18 @@ describe('isRpcResponse', () => {
 				response: {},
 			}),
 		).toBe(false);
+	});
+
+	it('returns true when both response and error are present (error wins)', () => {
+		expect(
+			isRpcResponse({
+				__rpc: true,
+				id: 'abc',
+				procedure: 'test',
+				response: { ok: true },
+				error: 'Something went wrong',
+			}),
+		).toBe(true);
 	});
 });
 

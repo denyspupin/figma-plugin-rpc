@@ -84,6 +84,7 @@ export function isRpcResponse(msg: unknown): msg is RpcResponseMessage {
 		'__rpc' in msg &&
 		(msg as Record<string, unknown>).__rpc === true &&
 		'id' in msg &&
+		'procedure' in msg &&
 		('response' in msg || 'error' in msg)
 	);
 }

@@ -160,6 +160,22 @@ describe('FigmaMainTransport', () => {
 		expect(figma.ui.onmessage).not.toBe(originalHandler);
 	});
 
+	it('original onmessage still receives messages while subscribed', () => {
+		const originalHandler = vi.fn();
+		figma.ui.onmessage = originalHandler;
+
+		const transport = new FigmaMainTransport();
+		const rpcHandler = vi.fn();
+		transport.onMessage(rpcHandler);
+
+		const onmessageFn = mockOnMessageSetter.mock.calls[1][0] as (msg: unknown) => void;
+		const message = { test: true };
+		onmessageFn(message);
+
+		expect(rpcHandler).toHaveBeenCalledWith(message);
+		expect(originalHandler).toHaveBeenCalledWith(message);
+	});
+
 	it('multiple subscribers share single figma.ui.onmessage', () => {
 		const transport = new FigmaMainTransport();
 		const handler1 = vi.fn();

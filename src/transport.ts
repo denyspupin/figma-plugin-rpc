@@ -81,6 +81,7 @@ export class FigmaMainTransport implements RpcTransport {
 				for (const h of this.handlers) {
 					h(message);
 				}
+				this.originalOnMessage?.(message);
 			};
 			this.listening = true;
 		}
