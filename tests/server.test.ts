@@ -257,6 +257,247 @@ describe('RpcServer', () => {
 		});
 	});
 
+	describe('Handler safety', () => {
+		it('returns unknown procedure error for "toString" when not registered', async () => {
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'toString',
+				payload: {},
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toContain('Unknown procedure');
+		});
+
+		it('returns unknown procedure error for "constructor" when not registered', async () => {
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'constructor',
+				payload: {},
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toContain('Unknown procedure');
+		});
+
+		it('returns unknown procedure error for "__proto__" when not registered', async () => {
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: '__proto__',
+				payload: {},
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toContain('Unknown procedure');
+		});
+
+		it('returns unknown procedure error for "hasOwnProperty" when not registered', async () => {
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'hasOwnProperty',
+				payload: {},
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toContain('Unknown procedure');
+		});
+	});
+
+	describe('Error containment', () => {
+		it('thrown validator invokes onError exactly once', async () => {
+			const onError = vi.fn();
+			const [freshTransport] = TestTransport.createPair();
+			const validator = vi.fn(() => {
+				throw new Error('validator exploded');
+			});
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				validator,
+				onError,
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(onError).toHaveBeenCalledTimes(1);
+			expect(onError).toHaveBeenCalledWith('add', expect.any(Error));
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('validator exploded');
+
+			s.stop();
+		});
+
+		it('handler failure is correctly serialized', async () => {
+			server.registerHandler('fail', async () => {
+				throw new RpcError('BOOM', 'async boom', { detail: 42 });
+			});
+
+			transport.deliver({
+				__rpc: true,
+				id: 'req-2',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('async boom');
+			expect(response.code).toBe('BOOM');
+			expect(response.data).toEqual({ detail: 42 });
+		});
+
+		it('logger failure does not become unhandled rejection', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const throwingLogger = {
+				log: () => {
+					throw new Error('logger broken');
+				},
+				debug: () => {
+					throw new Error('logger broken');
+				},
+				warn: () => {
+					throw new Error('logger broken');
+				},
+				error: () => {
+					throw new Error('logger broken');
+				},
+			};
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				logger: throwingLogger,
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3 });
+
+			s.stop();
+		});
+
+		it('onError callback failure does not become unhandled rejection', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const throwingOnError = vi.fn(() => {
+				throw new Error('onError broken');
+			});
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				onError: throwingOnError,
+			});
+			s.registerHandler('fail', () => {
+				throw new Error('handler error');
+			});
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(throwingOnError).toHaveBeenCalledTimes(1);
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('handler error');
+
+			s.stop();
+		});
+
+		it('transport send failure during response does not become unhandled rejection', async () => {
+			const listeners = new Set<(msg: unknown) => void>();
+			const brokenTransport = {
+				send: () => {
+					throw new Error('transport broken');
+				},
+				onMessage: (handler: (msg: unknown) => void) => {
+					listeners.add(handler);
+					return () => {
+						listeners.delete(handler);
+					};
+				},
+			};
+			const s = new RpcServer<TestProcedures, TestNotifications>(
+				brokenTransport as unknown as TestTransport,
+			);
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			const deliver = (msg: unknown) => listeners.forEach((h) => h(msg));
+
+			deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await new Promise((r) => setTimeout(r, 20));
+			s.stop();
+		});
+
+		it('handler overwrite warning continues working', () => {
+			const warnLogger = {
+				log: () => {},
+				debug: () => {},
+				warn: vi.fn(),
+				error: () => {},
+			};
+			const [freshTransport] = TestTransport.createPair();
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				logger: warnLogger,
+			});
+			s.registerHandler('add', () => ({ result: 1 }));
+			s.registerHandler('add', () => ({ result: 2 }));
+
+			expect(warnLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Overwriting'));
+		});
+	});
+
 	describe('Validator', () => {
 		it('calls validator before handler and proceeds when valid', async () => {
 			const [freshTransport] = TestTransport.createPair();
