@@ -11,7 +11,7 @@ export type {
 	RpcNotificationMessage,
 } from './types';
 
-export { isRpcRequest, isRpcResponse, isRpcNotification } from './types';
+export { isRpcRequest, isRpcResponse, isRpcNotification, PROTOCOL_VERSION } from './types';
 
 export type { RpcTransport, Logger } from './transport';
 export { noopLogger, FigmaUiTransport, FigmaMainTransport, formatDuration } from './transport';

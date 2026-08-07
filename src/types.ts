@@ -30,11 +30,14 @@ export type RpcNotificationPayload<
 	T extends RpcNotification<Schema>,
 > = Schema[T];
 
+export const PROTOCOL_VERSION = 1;
+
 export interface RpcRequestMessage<
 	Schema extends RpcProcedureSchema = RpcProcedureSchema,
 	T extends RpcProcedure<Schema> = RpcProcedure<Schema>,
 > {
 	__rpc: true;
+	v?: number;
 	id: string;
 	procedure: T;
 	payload: RpcRequest<Schema, T>;
@@ -46,12 +49,14 @@ export type RpcResponseMessage<
 > =
 	| {
 			__rpc: true;
+			v?: number;
 			id: string;
 			procedure: T;
 			response: RpcResponse<Schema, T>;
 	  }
 	| {
 			__rpc: true;
+			v?: number;
 			id: string;
 			procedure: T;
 			error: string;
@@ -62,6 +67,7 @@ export interface RpcNotificationMessage<
 	T extends RpcNotification<Schema> = RpcNotification<Schema>,
 > {
 	__rpcNotification: true;
+	v?: number;
 	notification: T;
 	payload: RpcNotificationPayload<Schema, T>;
 }

@@ -10,7 +10,7 @@ import type {
 	RpcResponse,
 	RpcResponseMessage,
 } from './types';
-import { isRpcNotification, isRpcResponse } from './types';
+import { isRpcNotification, isRpcResponse, PROTOCOL_VERSION } from './types';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 
@@ -122,6 +122,7 @@ class RpcClient<
 
 			const message: RpcRequestMessage<Procedures, T> = {
 				__rpc: true,
+				v: PROTOCOL_VERSION,
 				id,
 				procedure,
 				payload,
