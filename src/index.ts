@@ -1,6 +1,8 @@
 export type {
 	RpcProcedureSchema,
 	RpcNotificationSchema,
+	RpcProcedureDefinition,
+	ProcedureConstraint,
 	RpcProcedure,
 	RpcNotification,
 	RpcRequest,

@@ -4,10 +4,10 @@ import type {
 	RpcNotificationPayload,
 	RpcNotificationSchema,
 	RpcProcedure,
-	RpcProcedureSchema,
 	RpcRequest,
 	RpcRequestMessage,
 	RpcResponse,
+	ProcedureConstraint,
 } from './types';
 import { PROTOCOL_VERSION } from './types';
 import { decodeRpcMessage, type DecodedRpcResponse } from './protocol';
@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: RpcClientConfig = {
 };
 
 class RpcClient<
-	Procedures extends RpcProcedureSchema,
+	Procedures extends ProcedureConstraint<Procedures>,
 	Notifications extends RpcNotificationSchema,
 > {
 	private pending = new Map<string, PendingCall>();
@@ -272,7 +272,7 @@ class RpcClient<
 }
 
 function createRpcClient<
-	Procedures extends RpcProcedureSchema,
+	Procedures extends ProcedureConstraint<Procedures>,
 	Notifications extends RpcNotificationSchema,
 >(
 	transport: RpcTransport,

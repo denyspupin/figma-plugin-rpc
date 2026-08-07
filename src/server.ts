@@ -4,10 +4,10 @@ import type {
 	RpcNotificationPayload,
 	RpcNotificationSchema,
 	RpcProcedure,
-	RpcProcedureSchema,
 	RpcRequest,
 	RpcResponse,
 	RpcResponseMessage,
+	ProcedureConstraint,
 } from './types';
 import { PROTOCOL_VERSION } from './types';
 import { decodeRpcMessage } from './protocol';
@@ -15,7 +15,7 @@ import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
 
-type RpcHandler<Schema extends RpcProcedureSchema, T extends RpcProcedure<Schema>> = (
+type RpcHandler<Schema extends ProcedureConstraint<Schema>, T extends RpcProcedure<Schema>> = (
 	payload: RpcRequest<Schema, T>,
 ) => RpcResponse<Schema, T> | Promise<RpcResponse<Schema, T>>;
 
@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: RpcServerConfig = {
 };
 
 class RpcServer<
-	Procedures extends RpcProcedureSchema,
+	Procedures extends ProcedureConstraint<Procedures>,
 	Notifications extends RpcNotificationSchema,
 > {
 	private handlers = new Map<string, RpcHandler<Procedures, RpcProcedure<Procedures>>>();
@@ -233,7 +233,7 @@ class RpcServer<
 }
 
 function createRpcServer<
-	Procedures extends RpcProcedureSchema,
+	Procedures extends ProcedureConstraint<Procedures>,
 	Notifications extends RpcNotificationSchema,
 >(
 	transport: RpcTransport,
