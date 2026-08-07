@@ -115,18 +115,18 @@ For the UI iframe. Wraps messages in `{ pluginMessage: ... }` on send, unwraps o
 
 ### `FigmaMainTransport`
 
-For the plugin main thread. Uses `figma.ui.postMessage` on send, `figma.ui.onmessage` on receive. Multiplexes multiple subscribers over Figma's single-callback `onmessage` API.
+For the plugin main thread. Uses `figma.ui.postMessage` on send, `figma.ui.onmessage` on receive. Multiplexes multiple subscribers over Figma's single-callback `onmessage` API. Forwards messages to any pre-existing `onmessage` handler that was set before the transport was created.
 
 ### `RpcClient<Procedures, Notifications>`
 
-| Method                                | Description                                          |
-| ------------------------------------- | ---------------------------------------------------- |
-| `init()`                              | Start listening for responses/notifications          |
-| `destroy()`                           | Stop listening, reject pending requests              |
-| `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`        |
-| `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()` |
-| `getPendingCount()`                   | Number of in-flight requests                         |
-| `isInitialized()`                     | Whether `init()` has been called                     |
+| Method                                | Description                                                          |
+| ------------------------------------- | -------------------------------------------------------------------- |
+| `init()`                              | Start listening for responses/notifications                          |
+| `destroy()`                           | Stop listening, reject pending requests, clear notification handlers |
+| `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`                        |
+| `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()`                 |
+| `getPendingCount()`                   | Number of in-flight requests                                         |
+| `isInitialized()`                     | Whether `init()` has been called                                     |
 
 ### `RpcServer<Procedures, Notifications>`
 
