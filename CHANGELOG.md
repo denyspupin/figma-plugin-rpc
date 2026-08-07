@@ -1,6 +1,7 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v0.3.0...v1.0.0) (2026-08-07)
+
 
 ### Migration Notes (v0.3.0 → v1.0)
 
