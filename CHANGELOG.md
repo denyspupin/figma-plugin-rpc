@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v0.3.0...v0.4.0) (2026-08-07)
+
+
+### Features
+
+* add AbortSignal support to call() ([b88f52c](https://github.com/denyspupin/figma-plugin-rpc/commit/b88f52c176e3f474cb04c0f67c3e6b64b83e0753))
+* add pluggable runtime validation for RPC server ([4737236](https://github.com/denyspupin/figma-plugin-rpc/commit/47372369a44a8240279dcc1f762d0ebbc004a1c8))
+* add protocol version field to RPC messages ([401cb7b](https://github.com/denyspupin/figma-plugin-rpc/commit/401cb7be224a05585c312a4052f4b0aa4819d4e6))
+* add structured typed errors ([1ffef80](https://github.com/denyspupin/figma-plugin-rpc/commit/1ffef80c8e98d33a2f43fd91e81707ea102543df))
+
 ## [Unreleased]
 
 ### Migration Notes (v0.3.0 → v1.0)
