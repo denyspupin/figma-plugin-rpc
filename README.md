@@ -5,18 +5,47 @@
 [![CI](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/denyspupin/figma-plugin-rpc/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/denyspupin/figma-plugin-rpc?cacheSeconds=0)](./LICENSE)
 
-Type-safe RPC for Figma plugins. Call procedures and stream notifications between your plugin's main thread and UI iframe with full TypeScript inference.
+Type-safe RPC between Figma's main thread and UI iframe. Define procedures once, get full TypeScript inference on both sides.
+
+## Contents
+
+- [Why?](#why)
+- [Features](#features)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Core concepts](#core-concepts)
+- [API reference](#api-reference)
+- [Guides](#guides)
+- [License](#license)
 
 ## Why?
 
-Figma plugins run in two isolated contexts: the **main thread** (access to `figma.*` APIs) and the **UI iframe** (your React/Vue/Svelte app). Communicating between them requires `postMessage`, which is untyped and error-prone.
+Figma plugins run in two isolated contexts:
 
-`figma-plugin-rpc` gives you:
+- **Main thread** — Access to `figma.*` APIs, no DOM
+- **UI iframe** — Your React/Vue/Svelte app, no `figma.*` APIs
 
-- **Type-safe procedures** — Define once, get full inference on both sides
-- **Streaming notifications** — Server→client pub/sub for progress updates, selection changes, etc.
+Communicating between them requires `postMessage`, which is untyped and error-prone. `figma-plugin-rpc` gives you:
+
+- **Type-safe procedures** — Define once, full inference on both sides
+- **Streaming notifications** — Server-to-client pub/sub for progress, selection changes, etc.
+- **Structured errors** — Typed error codes and data with `RpcError`
+- **Cancellation** — Abort in-flight calls with `AbortSignal`
+- **Validation** — Pluggable runtime validation (e.g., zod)
 - **Zero config** — Built-in transports work out of the box
-- **Transport-agnostic** — Swap in WebSocket, Worker, or any `postMessage` environment
+
+## Features
+
+| Feature             | Description                                                        |
+| ------------------- | ------------------------------------------------------------------ |
+| Full type inference | Request and response types flow from schema to handlers to callers |
+| Async handlers      | Return promises from handlers, await on the client                 |
+| Notifications       | Fire-and-forget messages from server to client                     |
+| Timeouts            | Per-call or global timeout with clear error messages               |
+| Cancellation        | Cancel pending calls with `AbortSignal`                            |
+| Structured errors   | Throw `RpcError` with code and data, catch with type safety        |
+| Runtime validation  | Validate payloads before handlers execute                          |
+| Protocol versioning | Wire format includes version field for future upgrades             |
 
 ## Install
 
@@ -74,7 +103,6 @@ rpc.registerHandler('create-rectangle', ({ x, y, width, height }) => {
 	return { nodeId: node.id };
 });
 
-// Notify UI when selection changes
 figma.currentPage.on('selectionchange', () => {
 	rpc.notify('selection-changed', {
 		nodeIds: figma.currentPage.selection.map((n) => n.id),
@@ -94,7 +122,6 @@ import type { Procedures, Notifications } from './rpc-schema';
 const rpc = createRpcClient<Procedures, Notifications>(new FigmaUiTransport());
 rpc.init();
 
-// Call procedures with full type safety
 const { nodeIds } = await rpc.call('get-selection');
 
 const { nodeId } = await rpc.call('create-rectangle', {
@@ -104,7 +131,6 @@ const { nodeId } = await rpc.call('create-rectangle', {
 	height: 150,
 });
 
-// Subscribe to notifications
 const unsubscribe = rpc.on('selection-changed', ({ nodeIds }) => {
 	console.log('Selection changed:', nodeIds);
 });
@@ -113,7 +139,53 @@ const unsubscribe = rpc.on('selection-changed', ({ nodeIds }) => {
 unsubscribe();
 ```
 
-## API
+## Core concepts
+
+### Schema-first design
+
+Everything starts with your schema. Define your procedures and notifications in a shared file, then import the types everywhere.
+
+```ts
+// rpc-schema.ts
+import type { RpcProcedureSchema, RpcNotificationSchema } from 'figma-plugin-rpc';
+
+export interface Procedures extends RpcProcedureSchema {
+	// Request with payload
+	'create-node': {
+		request: { type: 'rectangle' | 'ellipse'; x: number; y: number };
+		response: { nodeId: string };
+	};
+
+	// Request without payload (use void)
+	'get-document-info': {
+		request: void;
+		response: { pageCount: number; selectionCount: number };
+	};
+
+	// With typed error
+	'delete-node': {
+		request: { nodeId: string };
+		response: { success: boolean };
+		error: { code: 'NODE_NOT_FOUND' | 'NODE_LOCKED'; nodeId: string };
+	};
+}
+
+export interface Notifications extends RpcNotificationSchema {
+	'document-changed': { type: 'selection' | 'page-switch'; data: unknown };
+	progress: { operation: string; percent: number };
+}
+```
+
+### Transport abstraction
+
+The library is transport-agnostic. Built-in transports handle Figma's `postMessage` wrapping:
+
+| Transport            | Context     | Description                                                  |
+| -------------------- | ----------- | ------------------------------------------------------------ |
+| `FigmaUiTransport`   | UI iframe   | Wraps messages in `{ pluginMessage: ... }` for `postMessage` |
+| `FigmaMainTransport` | Main thread | Uses `figma.ui.postMessage` / `figma.ui.on('message', ...)`  |
+
+## API reference
 
 ### Schema types
 
@@ -122,11 +194,12 @@ interface RpcProcedureSchema {
 	[procedureName: string]: {
 		request: unknown; // Use `void` for no payload
 		response: unknown;
+		error?: unknown; // Optional typed error
 	};
 }
 
 interface RpcNotificationSchema {
-	[notificationName: string]: unknown; // The notification payload
+	[notificationName: string]: unknown;
 }
 ```
 
@@ -134,84 +207,117 @@ interface RpcNotificationSchema {
 
 Creates a client for the UI iframe.
 
-| Method                                | Description                                             |
-| ------------------------------------- | ------------------------------------------------------- |
-| `init()`                              | Start listening for responses/notifications             |
-| `destroy()`                           | Stop listening, reject pending requests, clear handlers |
-| `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`           |
-| `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()`    |
-| `getPendingCount()`                   | Number of in-flight requests                            |
-| `isInitialized()`                     | Whether `init()` has been called                        |
+```ts
+import { createRpcClient, FigmaUiTransport } from 'figma-plugin-rpc';
+import type { Procedures, Notifications } from './rpc-schema';
+
+const rpc = createRpcClient<Procedures, Notifications>(new FigmaUiTransport(), {
+	defaultTimeout: 60_000, // 60 seconds
+	logger: console, // or custom logger
+});
+
+rpc.init();
+```
+
+**Methods:**
+
+| Method                                | Description                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `init()`                              | Start listening for responses/notifications. Must be called before `call()`. |
+| `destroy()`                           | Stop listening, reject pending requests, clear handlers.                     |
+| `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`.                               |
+| `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()` function.               |
+| `getPendingCount()`                   | Number of in-flight requests.                                                |
+| `isInitialized()`                     | Whether `init()` has been called.                                            |
 
 **Config options:**
 
-- `defaultTimeout` — Request timeout in ms (default: `30000`)
-- `logger` — Custom logger implementing `Logger` interface (default: `noopLogger`)
+| Option           | Type     | Default      | Description                                   |
+| ---------------- | -------- | ------------ | --------------------------------------------- |
+| `defaultTimeout` | `number` | `30000`      | Request timeout in milliseconds               |
+| `logger`         | `Logger` | `noopLogger` | Custom logger implementing `Logger` interface |
 
 ### `createRpcServer(transport, config?)`
 
 Creates a server for the plugin main thread.
 
-| Method                                | Description                                  |
-| ------------------------------------- | -------------------------------------------- |
-| `start()`                             | Start listening for incoming procedure calls |
-| `stop()`                              | Stop listening                               |
-| `registerHandler(procedure, handler)` | Register a handler for a procedure           |
-| `notify(notification, payload)`       | Send a notification to the client            |
+```ts
+import { createRpcServer, FigmaMainTransport } from 'figma-plugin-rpc';
+import type { Procedures, Notifications } from './rpc-schema';
+
+const rpc = createRpcServer<Procedures, Notifications>(new FigmaMainTransport(), {
+	logger: console,
+	onError: (procedure, error) => {
+		console.error(`Error in ${procedure}:`, error);
+	},
+	validator: (procedure, payload) => {
+		// Return RpcError to reject, void to pass
+	},
+});
+
+rpc.start();
+```
+
+**Methods:**
+
+| Method                                | Description                                                      |
+| ------------------------------------- | ---------------------------------------------------------------- |
+| `start()`                             | Start listening for incoming procedure calls.                    |
+| `stop()`                              | Stop listening.                                                  |
+| `registerHandler(procedure, handler)` | Register a handler for a procedure. Returns `this` for chaining. |
+| `notify(notification, payload)`       | Send a notification to the client.                               |
 
 **Config options:**
 
-- `logger` — Custom logger implementing `Logger` interface (default: `noopLogger`)
-- `onError` — Callback for unhandled errors in handlers
+| Option      | Type                         | Default      | Description                                   |
+| ----------- | ---------------------------- | ------------ | --------------------------------------------- |
+| `logger`    | `Logger`                     | `noopLogger` | Custom logger implementing `Logger` interface |
+| `onError`   | `(procedure, error) => void` | —            | Callback for unhandled errors in handlers     |
+| `validator` | `RpcValidator`               | —            | Runtime validation function                   |
 
-### Built-in transports
+### `RpcError`
 
-| Transport            | Context     | Description                                                                 |
-| -------------------- | ----------- | --------------------------------------------------------------------------- |
-| `FigmaUiTransport`   | UI iframe   | Wraps messages in `{ pluginMessage: ... }` for `postMessage`                |
-| `FigmaMainTransport` | Main thread | Uses `figma.ui.postMessage` / `figma.ui.onmessage`, multiplexes subscribers |
-
-### Custom transports
-
-Implement the `RpcTransport` interface for any message-passing environment:
+Structured error with code and optional data.
 
 ```ts
-import type { RpcTransport } from 'figma-plugin-rpc';
+import { RpcError } from 'figma-plugin-rpc';
 
-class WebSocketTransport implements RpcTransport {
-	private handlers = new Set<(message: unknown) => void>();
-
-	constructor(private ws: WebSocket) {
-		ws.addEventListener('message', (event) => {
-			const data = JSON.parse(event.data);
-			this.handlers.forEach((h) => h(data));
-		});
+// Throw in handler
+rpc.registerHandler('delete-node', ({ nodeId }) => {
+	const node = figma.getNodeById(nodeId);
+	if (!node) {
+		throw new RpcError('NODE_NOT_FOUND', `Node ${nodeId} does not exist`, { nodeId });
 	}
+	node.remove();
+	return { success: true };
+});
 
-	send(message: unknown): void {
-		this.ws.send(JSON.stringify(message));
-	}
-
-	onMessage(handler: (message: unknown) => void): () => void {
-		this.handlers.add(handler);
-		return () => this.handlers.delete(handler);
+// Catch on client
+try {
+	await rpc.call('delete-node', { nodeId: '123:456' });
+} catch (error) {
+	if (error instanceof RpcError) {
+		console.error(`Code: ${error.code}`); // 'NODE_NOT_FOUND'
+		console.error(`Data:`, error.data); // { nodeId: '123:456' }
 	}
 }
-
-// Use it
-const rpc = createRpcClient(new WebSocketTransport(ws));
 ```
 
-## Examples
+## Guides
 
 ### Error handling
 
-Handlers that throw will propagate the error to the client:
+#### Basic error propagation
+
+Errors thrown in handlers are automatically propagated to the client:
 
 ```ts
 // Server
 rpc.registerHandler('risky-operation', () => {
-	throw new Error('Something went wrong');
+	if (somethingWentWrong) {
+		throw new Error('Something went wrong');
+	}
+	return { success: true };
 });
 
 // Client
@@ -222,22 +328,273 @@ try {
 }
 ```
 
-### Per-call timeouts
+#### Structured errors with RpcError
 
-Override the default timeout for specific calls:
+Use `RpcError` to throw typed errors with a code and optional data:
 
 ```ts
-await rpc.call('slow-operation', payload, { timeout: 60000 }); // 60s
+// Server
+rpc.registerHandler('delete-node', ({ nodeId }) => {
+	const node = figma.getNodeById(nodeId);
+
+	if (!node) {
+		throw new RpcError('NOT_FOUND', `Node ${nodeId} does not exist`, { nodeId });
+	}
+
+	if (node.locked) {
+		throw new RpcError('LOCKED', `Node ${nodeId} is locked`, { nodeId });
+	}
+
+	node.remove();
+	return { success: true };
+});
+
+// Client
+try {
+	await rpc.call('delete-node', { nodeId: '123:456' });
+} catch (error) {
+	if (error instanceof RpcError) {
+		console.error(`Error code: ${error.code}`); // 'NOT_FOUND' or 'LOCKED'
+		console.error(`Error data:`, error.data); // { nodeId: '123:456' }
+
+		if (error.code === 'NOT_FOUND') {
+			showNotFoundDialog();
+		}
+	}
+}
 ```
 
-### Async handlers
+#### Global error handler
 
-Handlers can be async:
+Capture unhandled errors for logging or analytics:
 
 ```ts
-rpc.registerHandler('fetch-data', async () => {
-	const response = await fetch('https://api.example.com/data');
-	return response.json();
+const rpc = createRpcServer<Procedures, Notifications>(transport, {
+	onError: (procedure, error) => {
+		analytics.track('rpc_error', {
+			procedure,
+			message: error.message,
+			stack: error.stack,
+		});
+	},
+});
+```
+
+### Timeouts
+
+#### Global timeout
+
+Set a default timeout for all calls:
+
+```ts
+const rpc = createRpcClient<Procedures, Notifications>(transport, {
+	defaultTimeout: 60_000, // 60 seconds
+});
+```
+
+#### Per-call timeout
+
+Override the timeout for specific calls:
+
+```ts
+// This call gets 2 minutes
+const result = await rpc.call('export-document', payload, {
+	timeout: 120_000,
+});
+```
+
+#### Timeout errors
+
+When a call times out, you get a clear error message:
+
+```ts
+try {
+	await rpc.call('slow-operation');
+} catch (error) {
+	console.error(error.message);
+	// "RPC call "slow-operation" timed out after 30s (limit: 30s)"
+}
+```
+
+### Cancellation with AbortSignal
+
+Cancel in-flight requests using `AbortController`:
+
+```ts
+// Create a controller
+const controller = new AbortController();
+
+// Pass the signal to the call
+const promise = rpc.call('long-running-task', payload, {
+	signal: controller.signal,
+});
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+try {
+	await promise;
+} catch (error) {
+	if (error.name === 'AbortError') {
+		console.log('Request was cancelled');
+	}
+}
+```
+
+#### React search with cancellation
+
+```tsx
+function SearchInput() {
+	const [query, setQuery] = useState('');
+	const [results, setResults] = useState([]);
+	const abortRef = useRef<AbortController | null>(null);
+
+	const handleSearch = useCallback(async (value: string) => {
+		// Cancel previous request
+		abortRef.current?.abort();
+
+		if (!value.trim()) {
+			setResults([]);
+			return;
+		}
+
+		const controller = new AbortController();
+		abortRef.current = controller;
+
+		try {
+			const { items } = await rpc.call(
+				'search-nodes',
+				{ query: value },
+				{ signal: controller.signal },
+			);
+			setResults(items);
+		} catch (error) {
+			if (error.name !== 'AbortError') {
+				console.error(error);
+			}
+		}
+	}, []);
+
+	// Debounce search
+	useEffect(() => {
+		const timeout = setTimeout(() => handleSearch(query), 300);
+		return () => clearTimeout(timeout);
+	}, [query, handleSearch]);
+
+	return (
+		<div>
+			<input value={query} onChange={(e) => setQuery(e.target.value)} />
+			<ResultsList items={results} />
+		</div>
+	);
+}
+```
+
+### Runtime validation
+
+Validate payloads before handlers execute. Works with any validation library.
+
+#### With Zod
+
+```ts
+import { z } from 'zod';
+import { RpcError } from 'figma-plugin-rpc';
+
+const validators = {
+	'create-rectangle': z.object({
+		x: z.number(),
+		y: z.number(),
+		width: z.number().positive(),
+		height: z.number().positive(),
+	}),
+	'create-ellipse': z.object({
+		cx: z.number(),
+		cy: z.number(),
+		rx: z.number().positive(),
+		ry: z.number().positive(),
+	}),
+};
+
+const rpc = createRpcServer<Procedures, Notifications>(transport, {
+	validator: (procedure, payload) => {
+		const schema = validators[procedure];
+		if (!schema) return; // No validator for this procedure
+
+		const result = schema.safeParse(payload);
+		if (!result.success) {
+			return new RpcError(
+				'VALIDATION_ERROR',
+				result.error.issues.map((i) => i.message).join(', '),
+				{ issues: result.error.issues },
+			);
+		}
+	},
+});
+```
+
+### Notifications
+
+#### Progress updates
+
+```ts
+// Server
+rpc.registerHandler('process-images', async ({ imageIds }) => {
+	const total = imageIds.length;
+
+	for (let i = 0; i < total; i++) {
+		await processImage(imageIds[i]);
+
+		rpc.notify('progress', {
+			operation: 'process-images',
+			percent: Math.round(((i + 1) / total) * 100),
+		});
+	}
+
+	return { processed: total };
+});
+
+// Client
+const unsubscribe = rpc.on('progress', ({ operation, percent }) => {
+	updateProgressBar(operation, percent);
+});
+
+const result = await rpc.call('process-images', { imageIds });
+unsubscribe();
+```
+
+#### Selection sync
+
+```ts
+// Server — notify on selection change
+figma.currentPage.on('selectionchange', () => {
+	rpc.notify('selection-changed', {
+		nodeIds: figma.currentPage.selection.map((n) => n.id),
+	});
+});
+
+// Client — react to selection changes
+rpc.on('selection-changed', ({ nodeIds }) => {
+	setSelectedNodes(nodeIds);
+});
+```
+
+### Logging
+
+Enable logging for debugging:
+
+```ts
+const rpc = createRpcClient<Procedures, Notifications>(transport, {
+	logger: console,
+});
+
+// Or use a custom logger
+const rpc = createRpcServer<Procedures, Notifications>(transport, {
+	logger: {
+		log: (...args) => analytics.log('rpc', ...args),
+		debug: (...args) => console.debug('[RPC]', ...args),
+		warn: (...args) => console.warn('[RPC]', ...args),
+		error: (...args) => sentry.captureException(...args),
+	},
 });
 ```
 
