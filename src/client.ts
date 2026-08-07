@@ -14,15 +14,7 @@ import { decodeRpcMessage, type DecodedRpcResponse } from './protocol';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
-
-interface PendingRequest<T = unknown> {
-	resolve: (value: T) => void;
-	reject: (error: Error) => void;
-	timeoutId: ReturnType<typeof setTimeout>;
-	procedure: string;
-	startTime: number;
-	cleanupAbort?: () => void;
-}
+import { PendingCall } from './pending-call';
 
 type NotificationHandler<
 	Schema extends RpcNotificationSchema,
@@ -43,7 +35,7 @@ class RpcClient<
 	Procedures extends RpcProcedureSchema,
 	Notifications extends RpcNotificationSchema,
 > {
-	private pending = new Map<string, PendingRequest>();
+	private pending = new Map<string, PendingCall>();
 	private notificationHandlers = new Map<string, Set<(payload: unknown) => void>>();
 	private initialized = false;
 	private unsubscribeTransport: (() => void) | null = null;
@@ -72,12 +64,8 @@ class RpcClient<
 		this.unsubscribeTransport?.();
 		this.unsubscribeTransport = null;
 
-		for (const [, request] of this.pending) {
-			clearTimeout(request.timeoutId);
-			request.cleanupAbort?.();
-			request.reject(
-				new Error(`RPC client destroyed while "${request.procedure}" was pending`),
-			);
+		for (const [, call] of this.pending) {
+			call.reject(new Error(`RPC client destroyed while "${call.procedure}" was pending`));
 		}
 
 		this.pending.clear();
@@ -106,14 +94,22 @@ class RpcClient<
 		this.config.logger.debug(`[RpcClient] "${procedure}"`);
 
 		return new Promise<RpcResponse<Procedures, T>>((resolve, reject) => {
+			const signal = options?.signal;
+
+			if (signal?.aborted) {
+				const error = new Error(`RPC call "${procedure}" was aborted`);
+				error.name = 'AbortError';
+				reject(error);
+				return;
+			}
+
 			let cleanupAbort: (() => void) | undefined;
 
 			const timeoutId = setTimeout(() => {
-				if (this.pending.has(id)) {
-					this.pending.delete(id);
-					cleanupAbort?.();
-					const elapsed = Date.now() - startTime;
-					reject(
+				const call = this.pending.get(id);
+				if (call) {
+					const elapsed = Date.now() - call.startTime;
+					call.reject(
 						new Error(
 							`RPC call "${procedure}" timed out after ${formatDuration(elapsed)} (limit: ${formatDuration(timeout)})`,
 						),
@@ -121,44 +117,37 @@ class RpcClient<
 				}
 			}, timeout);
 
-			if (options?.signal) {
-				const signal = options.signal;
+			if (signal && typeof signal.addEventListener === 'function') {
+				const abortHandler = () => {
+					const call = this.pending.get(id);
+					if (call) {
+						const error = new Error(`RPC call "${procedure}" was aborted`);
+						error.name = 'AbortError';
+						call.reject(error);
+					}
+				};
 
-				if (signal.aborted) {
-					clearTimeout(timeoutId);
-					const error = new Error(`RPC call "${procedure}" was aborted`);
-					error.name = 'AbortError';
-					reject(error);
-					return;
-				}
+				signal.addEventListener('abort', abortHandler, { once: true });
 
-				if (typeof signal.addEventListener === 'function') {
-					const abortHandler = () => {
-						if (this.pending.has(id)) {
-							this.pending.delete(id);
-							clearTimeout(timeoutId);
-							const error = new Error(`RPC call "${procedure}" was aborted`);
-							error.name = 'AbortError';
-							reject(error);
-						}
-					};
-
-					signal.addEventListener('abort', abortHandler, { once: true });
-
-					cleanupAbort = () => {
-						signal.removeEventListener('abort', abortHandler);
-					};
-				}
+				cleanupAbort = () => {
+					signal.removeEventListener('abort', abortHandler);
+				};
 			}
 
-			this.pending.set(id, {
+			const call = new PendingCall({
+				id,
+				procedure,
+				startTime,
 				resolve: resolve as (value: unknown) => void,
 				reject,
 				timeoutId,
-				procedure,
-				startTime,
 				cleanupAbort,
+				onSettle: (settledId) => {
+					this.pending.delete(settledId);
+				},
 			});
+
+			this.pending.set(id, call);
 
 			const message: RpcRequestMessage<Procedures, T> = {
 				__rpc: true,
@@ -168,7 +157,11 @@ class RpcClient<
 				payload,
 			};
 
-			this.transport.send(message);
+			try {
+				this.transport.send(message);
+			} catch (error) {
+				call.reject(error instanceof Error ? error : new Error(String(error)));
+			}
 		});
 	}
 
@@ -218,43 +211,36 @@ class RpcClient<
 
 	private handleDecodedResponse(decoded: DecodedRpcResponse): void {
 		const { id, procedure } = decoded;
-		const pending = this.pending.get(id);
+		const call = this.pending.get(id);
 
-		if (!pending) {
+		if (!call) {
 			return;
 		}
 
-		if (pending.procedure !== procedure) {
-			clearTimeout(pending.timeoutId);
-			pending.cleanupAbort?.();
-			this.pending.delete(id);
-			pending.reject(
+		if (call.procedure !== procedure) {
+			call.reject(
 				new Error(
-					`Protocol error: response procedure "${procedure}" does not match pending "${pending.procedure}" for id "${id}"`,
+					`Protocol error: response procedure "${procedure}" does not match pending "${call.procedure}" for id "${id}"`,
 				),
 			);
 			return;
 		}
 
-		clearTimeout(pending.timeoutId);
-		pending.cleanupAbort?.();
-		this.pending.delete(id);
-
-		const duration = Date.now() - pending.startTime;
+		const duration = call.duration();
 
 		if (!decoded.success) {
 			const error = decoded.error ?? 'Unknown error';
 			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${error}`);
 			if (decoded.code) {
-				pending.reject(new RpcError(decoded.code, error, decoded.data));
+				call.reject(new RpcError(decoded.code, error, decoded.data));
 			} else {
-				pending.reject(new Error(error));
+				call.reject(new Error(error));
 			}
 		} else {
 			this.config.logger.debug(
 				`[RpcClient] "${procedure}" completed in ${formatDuration(duration)}`,
 			);
-			pending.resolve(decoded.response as RpcResponse<Procedures, RpcProcedure<Procedures>>);
+			call.resolve(decoded.response);
 		}
 	}
 

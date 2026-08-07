@@ -578,4 +578,84 @@ describe('RpcClient', () => {
 			);
 		});
 	});
+
+	describe('Send failure', () => {
+		it('synchronous send failure rejects the promise and cleans up', async () => {
+			const brokenTransport = {
+				send: () => {
+					throw new Error('transport broken');
+				},
+				onMessage: () => () => {},
+			};
+			const c = new RpcClient<TestProcedures, TestNotifications>(
+				brokenTransport as unknown as TestTransport,
+			);
+			c.init();
+
+			const promise = c.call('add', { a: 1, b: 2 });
+			await expect(promise).rejects.toThrow('transport broken');
+			expect(c.getPendingCount()).toBe(0);
+
+			c.destroy();
+		});
+
+		it('send failure clears the timer', async () => {
+			const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+			const brokenTransport = {
+				send: () => {
+					throw new Error('transport broken');
+				},
+				onMessage: () => () => {},
+			};
+			const c = new RpcClient<TestProcedures, TestNotifications>(
+				brokenTransport as unknown as TestTransport,
+			);
+			c.init();
+
+			await c.call('add', { a: 1, b: 2 }).catch(() => {});
+			expect(clearTimeoutSpy).toHaveBeenCalled();
+
+			clearTimeoutSpy.mockRestore();
+			c.destroy();
+		});
+
+		it('send failure cleans up abort listener', async () => {
+			const brokenTransport = {
+				send: () => {
+					throw new Error('transport broken');
+				},
+				onMessage: () => () => {},
+			};
+			const c = new RpcClient<TestProcedures, TestNotifications>(
+				brokenTransport as unknown as TestTransport,
+			);
+			c.init();
+
+			const ac = new AbortController();
+			const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+			await c.call('add', { a: 1, b: 2 }, { signal: ac.signal }).catch(() => {});
+			expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+
+			removeSpy.mockRestore();
+			c.destroy();
+		});
+	});
+
+	describe('Procedure correlation', () => {
+		it('rejects response with mismatched procedure name', async () => {
+			const promise = client.call('add', { a: 1, b: 2 });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'wrong-procedure',
+				response: { result: 99 },
+			});
+
+			await expect(promise).rejects.toThrow('Protocol error');
+			expect(client.getPendingCount()).toBe(0);
+		});
+	});
 });
