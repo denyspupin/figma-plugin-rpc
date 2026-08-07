@@ -467,43 +467,52 @@ try {
 }
 ```
 
-#### React example with cleanup
+#### React search with cancellation
 
 ```tsx
-function DataFetcher() {
-	const [data, setData] = useState(null);
-	const [loading, setLoading] = useState(false);
+function SearchInput() {
+	const [query, setQuery] = useState('');
+	const [results, setResults] = useState([]);
+	const abortRef = useRef<AbortController | null>(null);
 
-	useEffect(() => {
-		const controller = new AbortController();
+	const handleSearch = useCallback(async (value: string) => {
+		// Cancel previous request
+		abortRef.current?.abort();
 
-		async function fetchData() {
-			setLoading(true);
-			try {
-				const result = await rpc.call(
-					'fetch-data',
-					{ query },
-					{
-						signal: controller.signal,
-					},
-				);
-				setData(result);
-			} catch (error) {
-				if (error.name !== 'AbortError') {
-					console.error(error);
-				}
-			} finally {
-				setLoading(false);
-			}
+		if (!value.trim()) {
+			setResults([]);
+			return;
 		}
 
-		fetchData();
+		const controller = new AbortController();
+		abortRef.current = controller;
 
-		// Cleanup: cancel request when component unmounts
-		return () => controller.abort();
-	}, [query]);
+		try {
+			const { items } = await rpc.call(
+				'search-nodes',
+				{ query: value },
+				{ signal: controller.signal },
+			);
+			setResults(items);
+		} catch (error) {
+			if (error.name !== 'AbortError') {
+				console.error(error);
+			}
+		}
+	}, []);
 
-	return loading ? <Spinner /> : <DataView data={data} />;
+	// Debounce search
+	useEffect(() => {
+		const timeout = setTimeout(() => handleSearch(query), 300);
+		return () => clearTimeout(timeout);
+	}, [query, handleSearch]);
+
+	return (
+		<div>
+			<input value={query} onChange={(e) => setQuery(e.target.value)} />
+			<ResultsList items={results} />
+		</div>
+	);
 }
 ```
 
