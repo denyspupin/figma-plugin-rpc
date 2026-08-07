@@ -331,49 +331,35 @@ try {
 
 #### Structured errors with RpcError
 
-For typed error handling, use `RpcError`:
+Use `RpcError` to throw typed errors with a code and optional data:
 
 ```ts
-// rpc-schema.ts
-export interface Procedures extends RpcProcedureSchema {
-	checkout: {
-		request: { cartId: string };
-		response: { orderId: string };
-		error: { code: 'CART_EMPTY' | 'PAYMENT_FAILED'; details?: string };
-	};
-}
-
 // Server
-rpc.registerHandler('checkout', ({ cartId }) => {
-	const cart = getCart(cartId);
+rpc.registerHandler('delete-node', ({ nodeId }) => {
+	const node = figma.getNodeById(nodeId);
 
-	if (cart.items.length === 0) {
-		throw new RpcError('CART_EMPTY', 'Cart is empty', { cartId });
+	if (!node) {
+		throw new RpcError('NOT_FOUND', `Node ${nodeId} does not exist`, { nodeId });
 	}
 
-	const paymentResult = await processPayment(cart);
-	if (!paymentResult.success) {
-		throw new RpcError('PAYMENT_FAILED', 'Payment declined', {
-			reason: paymentResult.declineReason,
-		});
+	if (node.locked) {
+		throw new RpcError('LOCKED', `Node ${nodeId} is locked`, { nodeId });
 	}
 
-	return { orderId: paymentResult.orderId };
+	node.remove();
+	return { success: true };
 });
 
 // Client
 try {
-	const { orderId } = await rpc.call('checkout', { cartId: 'cart_123' });
-	console.log('Order placed:', orderId);
+	await rpc.call('delete-node', { nodeId: '123:456' });
 } catch (error) {
 	if (error instanceof RpcError) {
-		switch (error.code) {
-			case 'CART_EMPTY':
-				showEmptyCartWarning();
-				break;
-			case 'PAYMENT_FAILED':
-				showPaymentError(error.data?.reason);
-				break;
+		console.error(`Error code: ${error.code}`); // 'NOT_FOUND' or 'LOCKED'
+		console.error(`Error data:`, error.data); // { nodeId: '123:456' }
+
+		if (error.code === 'NOT_FOUND') {
+			showNotFoundDialog();
 		}
 	}
 }
