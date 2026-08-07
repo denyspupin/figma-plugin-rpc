@@ -76,15 +76,17 @@ describe('FigmaUiTransport', () => {
 
 describe('FigmaMainTransport', () => {
 	let mockPostMessage: ReturnType<typeof vi.fn>;
-	let currentOnMessage: ((msg: unknown) => void) | undefined;
-	let mockOnMessageSetter: ReturnType<typeof vi.fn>;
+	let currentOnMessage: ((msg: unknown) => void) | null;
+	let mockOnMessageSetter: ReturnType<typeof vi.fn> & ((fn: (msg: unknown) => void) => void);
 
 	beforeEach(() => {
 		mockPostMessage = vi.fn();
-		currentOnMessage = undefined;
-		mockOnMessageSetter = vi.fn((fn: (msg: unknown) => void) => {
+		currentOnMessage = null;
+		const setter = vi.fn((fn: (msg: unknown) => void) => {
 			currentOnMessage = fn;
 		});
+		mockOnMessageSetter = setter as ReturnType<typeof vi.fn> &
+			((fn: (msg: unknown) => void) => void);
 
 		vi.stubGlobal('figma', {
 			ui: {
@@ -92,7 +94,7 @@ describe('FigmaMainTransport', () => {
 				set onmessage(fn: (msg: unknown) => void) {
 					mockOnMessageSetter(fn);
 				},
-				get onmessage() {
+				get onmessage(): ((msg: unknown) => void) | null {
 					return currentOnMessage;
 				},
 			},

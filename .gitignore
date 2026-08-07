@@ -38,3 +38,6 @@ coverage/
 # Package manager local caches
 .pnp.*
 .pnpm-store
+
+# OpenCode local files
+.opencode/
