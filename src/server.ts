@@ -9,7 +9,7 @@ import type {
 	RpcResponse,
 	RpcResponseMessage,
 } from './types';
-import { isRpcRequest } from './types';
+import { isRpcRequest, PROTOCOL_VERSION } from './types';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 
@@ -135,6 +135,7 @@ class RpcServer<
 	): void {
 		const message: RpcNotificationMessage<Notifications, T> = {
 			__rpcNotification: true,
+			v: PROTOCOL_VERSION,
 			notification,
 			payload,
 		};
@@ -149,6 +150,7 @@ class RpcServer<
 	): void {
 		const message: RpcResponseMessage = {
 			__rpc: true,
+			v: PROTOCOL_VERSION,
 			id,
 			procedure,
 			response,
@@ -160,6 +162,7 @@ class RpcServer<
 	private sendError(id: string, procedure: string, error: string): void {
 		const message: RpcResponseMessage = {
 			__rpc: true,
+			v: PROTOCOL_VERSION,
 			id,
 			procedure,
 			error,
