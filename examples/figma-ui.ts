@@ -1,6 +1,11 @@
-import { createRpcClient, FigmaUiTransport } from '../src';
+import {
+	createRpcClient,
+	FigmaUiTransport,
+	type RpcNotificationSchema,
+	type RpcProcedureSchema,
+} from '../src';
 
-interface Procedures {
+interface Procedures extends RpcProcedureSchema {
 	'get-selection': {
 		request: void;
 		response: { nodeIds: string[] };
@@ -11,7 +16,7 @@ interface Procedures {
 	};
 }
 
-interface Notifications {
+interface Notifications extends RpcNotificationSchema {
 	'selection-changed': { nodeIds: string[] };
 }
 

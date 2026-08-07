@@ -1,6 +1,11 @@
-import { createRpcServer, FigmaMainTransport } from '../src';
+import {
+	createRpcServer,
+	FigmaMainTransport,
+	type RpcNotificationSchema,
+	type RpcProcedureSchema,
+} from '../src';
 
-interface Procedures {
+interface Procedures extends RpcProcedureSchema {
 	'get-selection': {
 		request: void;
 		response: { nodeIds: string[] };
@@ -11,7 +16,7 @@ interface Procedures {
 	};
 }
 
-interface Notifications {
+interface Notifications extends RpcNotificationSchema {
 	'selection-changed': { nodeIds: string[] };
 }
 
@@ -30,10 +35,13 @@ rpc.registerHandler('create-rectangle', ({ x, y, width, height }) => {
 	return { nodeId: node.id };
 });
 
-figma.currentPage.on('selectionchange', () => {
-	rpc.notify('selection-changed', {
-		nodeIds: figma.currentPage.selection.map((n) => n.id),
-	});
-});
+(figma.currentPage as unknown as { on: (event: string, handler: () => void) => void }).on(
+	'selectionchange',
+	() => {
+		rpc.notify('selection-changed', {
+			nodeIds: figma.currentPage.selection.map((n) => n.id),
+		});
+	},
+);
 
 rpc.start();
