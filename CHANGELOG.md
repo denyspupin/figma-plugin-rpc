@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Migration Notes (v0.3.0 → v1.0)
+
+**FigmaMainTransport**: Now uses `figma.ui.on('message', cb)` / `figma.ui.off('message', cb)` instead of the `figma.ui.onmessage` setter. Behavior is unchanged for consumers who only use this library. Consumers who manually set `figma.ui.onmessage` are no longer wrapped (they were before) — this is strictly safer.
+
 ## [0.3.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v0.2.2...v0.3.0) (2026-08-07)
 
 

@@ -76,27 +76,29 @@ describe('FigmaUiTransport', () => {
 
 describe('FigmaMainTransport', () => {
 	let mockPostMessage: ReturnType<typeof vi.fn>;
-	let currentOnMessage: ((msg: unknown) => void) | null;
-	let mockOnMessageSetter: ReturnType<typeof vi.fn> & ((fn: (msg: unknown) => void) => void);
+	let mockOn: ReturnType<typeof vi.fn>;
+	let mockOff: ReturnType<typeof vi.fn>;
+	let registeredHandlers: Set<(pluginMessage: unknown) => void>;
 
 	beforeEach(() => {
 		mockPostMessage = vi.fn();
-		currentOnMessage = null;
-		const setter = vi.fn((fn: (msg: unknown) => void) => {
-			currentOnMessage = fn;
+		registeredHandlers = new Set();
+		mockOn = vi.fn((type: string, callback: (pluginMessage: unknown) => void) => {
+			if (type === 'message') {
+				registeredHandlers.add(callback);
+			}
 		});
-		mockOnMessageSetter = setter as ReturnType<typeof vi.fn> &
-			((fn: (msg: unknown) => void) => void);
+		mockOff = vi.fn((type: string, callback: (pluginMessage: unknown) => void) => {
+			if (type === 'message') {
+				registeredHandlers.delete(callback);
+			}
+		});
 
 		vi.stubGlobal('figma', {
 			ui: {
 				postMessage: mockPostMessage,
-				set onmessage(fn: (msg: unknown) => void) {
-					mockOnMessageSetter(fn);
-				},
-				get onmessage(): ((msg: unknown) => void) | null {
-					return currentOnMessage;
-				},
+				on: mockOn,
+				off: mockOff,
 			},
 		});
 	});
@@ -104,6 +106,12 @@ describe('FigmaMainTransport', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});
+
+	function simulateMessage(message: unknown) {
+		for (const handler of registeredHandlers) {
+			handler(message);
+		}
+	}
 
 	it('send calls figma.ui.postMessage', () => {
 		const transport = new FigmaMainTransport();
@@ -114,83 +122,74 @@ describe('FigmaMainTransport', () => {
 		expect(mockPostMessage).toHaveBeenCalledWith(message);
 	});
 
-	it('onMessage sets figma.ui.onmessage and dispatches to handler', () => {
+	it('onMessage registers a message handler via figma.ui.on', () => {
 		const transport = new FigmaMainTransport();
 		const handler = vi.fn();
 		transport.onMessage(handler);
 
-		expect(mockOnMessageSetter).toHaveBeenCalled();
+		expect(mockOn).toHaveBeenCalledWith('message', expect.any(Function));
 
-		const onmessageFn = mockOnMessageSetter.mock.calls[0][0] as (msg: unknown) => void;
 		const message = { __rpc: true, id: '1', procedure: 'test', payload: {} };
-		onmessageFn(message);
+		simulateMessage(message);
 
 		expect(handler).toHaveBeenCalledWith(message);
 	});
 
-	it('unsubscribe restores original onmessage when last handler removed', () => {
-		const originalHandler = vi.fn();
-		figma.ui.onmessage = originalHandler;
-
+	it('unsubscribe removes handler via figma.ui.off when last handler removed', () => {
 		const transport = new FigmaMainTransport();
 		const handler = vi.fn();
 		const unsub = transport.onMessage(handler);
 
 		unsub();
 
-		expect(figma.ui.onmessage).toBe(originalHandler);
+		expect(mockOff).toHaveBeenCalledWith('message', expect.any(Function));
 	});
 
-	it('unsubscribe sets a no-op when no original onmessage existed', () => {
+	it('unsubscribe does not call figma.ui.off if other handlers remain', () => {
 		const transport = new FigmaMainTransport();
-		const handler = vi.fn();
-		const unsub = transport.onMessage(handler);
+		const handler1 = vi.fn();
+		const handler2 = vi.fn();
+		const unsub1 = transport.onMessage(handler1);
+		transport.onMessage(handler2);
 
-		unsub();
+		unsub1();
 
-		expect(figma.ui.onmessage).toEqual(expect.any(Function));
-		expect(() => (figma.ui.onmessage as (msg: unknown) => void)({})).not.toThrow();
-	});
+		expect(mockOff).not.toHaveBeenCalled();
 
-	it('does not clobber pre-existing onmessage when subscribing', () => {
-		const originalHandler = vi.fn();
-		figma.ui.onmessage = originalHandler;
-
-		const transport = new FigmaMainTransport();
-		transport.onMessage(vi.fn());
-
-		expect(figma.ui.onmessage).not.toBe(originalHandler);
-	});
-
-	it('original onmessage still receives messages while subscribed', () => {
-		const originalHandler = vi.fn();
-		figma.ui.onmessage = originalHandler;
-
-		const transport = new FigmaMainTransport();
-		const rpcHandler = vi.fn();
-		transport.onMessage(rpcHandler);
-
-		const onmessageFn = mockOnMessageSetter.mock.calls[1][0] as (msg: unknown) => void;
 		const message = { test: true };
-		onmessageFn(message);
+		simulateMessage(message);
 
-		expect(rpcHandler).toHaveBeenCalledWith(message);
-		expect(originalHandler).toHaveBeenCalledWith(message);
+		expect(handler1).not.toHaveBeenCalled();
+		expect(handler2).toHaveBeenCalledWith(message);
 	});
 
-	it('multiple subscribers share single figma.ui.onmessage', () => {
+	it('multiple subscribers share single figma.ui.on registration', () => {
 		const transport = new FigmaMainTransport();
 		const handler1 = vi.fn();
 		const handler2 = vi.fn();
 		transport.onMessage(handler1);
 		transport.onMessage(handler2);
 
-		expect(mockOnMessageSetter).toHaveBeenCalledTimes(1);
+		expect(mockOn).toHaveBeenCalledTimes(1);
 
-		const onmessageFn = mockOnMessageSetter.mock.calls[0][0] as (msg: unknown) => void;
-		onmessageFn({ test: true });
+		simulateMessage({ test: true });
 
 		expect(handler1).toHaveBeenCalled();
 		expect(handler2).toHaveBeenCalled();
+	});
+
+	it('does not interfere with other figma.ui.on listeners', () => {
+		const externalHandler = vi.fn();
+		figma.ui.on('message', externalHandler);
+
+		const transport = new FigmaMainTransport();
+		const rpcHandler = vi.fn();
+		transport.onMessage(rpcHandler);
+
+		const message = { test: true };
+		simulateMessage(message);
+
+		expect(rpcHandler).toHaveBeenCalledWith(message);
+		expect(externalHandler).toHaveBeenCalledWith(message);
 	});
 });
