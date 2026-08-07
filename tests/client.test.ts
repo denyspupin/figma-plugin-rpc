@@ -302,4 +302,213 @@ describe('RpcClient', () => {
 
 		expect(newHandler).toHaveBeenCalledWith({ percent: 75 });
 	});
+
+	describe('AbortSignal support', () => {
+		it('rejects with AbortError when signal is aborted', async () => {
+			const controller = new AbortController();
+			const promise = client.call('slow', undefined, { signal: controller.signal });
+
+			controller.abort();
+
+			await expect(promise).rejects.toThrow(/aborted/);
+			await expect(promise).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+			expect(client.getPendingCount()).toBe(0);
+		});
+
+		it('rejects immediately if signal is already aborted', async () => {
+			const controller = new AbortController();
+			controller.abort();
+
+			const promise = client.call('slow', undefined, { signal: controller.signal });
+
+			await expect(promise).rejects.toThrow(/aborted/);
+			await expect(promise).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+			expect(client.getPendingCount()).toBe(0);
+			expect(transport.getSentCount()).toBe(0);
+		});
+
+		it('clears timeout when aborted', async () => {
+			vi.useFakeTimers();
+
+			const controller = new AbortController();
+			const promise = client.call('slow', undefined, {
+				signal: controller.signal,
+				timeout: 10000,
+			});
+
+			controller.abort();
+
+			await expect(promise).rejects.toThrow(/aborted/);
+			expect(client.getPendingCount()).toBe(0);
+
+			vi.advanceTimersByTime(20000);
+
+			vi.useRealTimers();
+		});
+
+		it('cleans up abort listener on successful response', async () => {
+			const controller = new AbortController();
+			const promise = client.call('add', { a: 1, b: 2 }, { signal: controller.signal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'add',
+				response: { result: 3 },
+			});
+
+			await expect(promise).resolves.toEqual({ result: 3 });
+			expect(client.getPendingCount()).toBe(0);
+
+			controller.abort();
+		});
+
+		it('cleans up abort listener on error response', async () => {
+			const controller = new AbortController();
+			const promise = client.call('get-data', undefined, { signal: controller.signal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Data not found',
+			});
+
+			await expect(promise).rejects.toThrow('Data not found');
+			expect(client.getPendingCount()).toBe(0);
+
+			controller.abort();
+		});
+
+		it('cleans up abort listener on timeout', async () => {
+			vi.useFakeTimers();
+
+			const controller = new AbortController();
+			const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
+				defaultTimeout: 100,
+			});
+			fastClient.init();
+
+			const promise = fastClient.call('slow', undefined, { signal: controller.signal });
+
+			vi.advanceTimersByTime(101);
+
+			await expect(promise).rejects.toThrow(/timed out/);
+			expect(fastClient.getPendingCount()).toBe(0);
+
+			controller.abort();
+
+			fastClient.destroy();
+			vi.useRealTimers();
+		});
+
+		it('works with void payload and signal', async () => {
+			const controller = new AbortController();
+			const promise = client.call('get-data', undefined, { signal: controller.signal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				response: { data: 'test' },
+			});
+
+			await expect(promise).resolves.toEqual({ data: 'test' });
+		});
+
+		it('works with payload and signal', async () => {
+			const controller = new AbortController();
+			const promise = client.call('add', { a: 5, b: 3 }, { signal: controller.signal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'add',
+				response: { result: 8 },
+			});
+
+			await expect(promise).resolves.toEqual({ result: 8 });
+		});
+
+		it('works with timeout and signal together', async () => {
+			vi.useFakeTimers();
+
+			const controller = new AbortController();
+			const promise = client.call('slow', undefined, {
+				timeout: 50,
+				signal: controller.signal,
+			});
+
+			vi.advanceTimersByTime(51);
+
+			await expect(promise).rejects.toThrow(/timed out/);
+
+			vi.useRealTimers();
+		});
+
+		it('abort after response does not affect other requests', async () => {
+			const controller1 = new AbortController();
+			const controller2 = new AbortController();
+
+			const promise1 = client.call('add', { a: 1, b: 2 }, { signal: controller1.signal });
+			const promise2 = client.call('add', { a: 3, b: 4 }, { signal: controller2.signal });
+
+			const sent1 = transport.sent[0] as { id: string };
+			const sent2 = transport.sent[1] as { id: string };
+
+			transport.deliver({
+				__rpc: true,
+				id: sent1.id,
+				procedure: 'add',
+				response: { result: 3 },
+			});
+
+			await expect(promise1).resolves.toEqual({ result: 3 });
+
+			controller1.abort();
+
+			transport.deliver({
+				__rpc: true,
+				id: sent2.id,
+				procedure: 'add',
+				response: { result: 7 },
+			});
+
+			await expect(promise2).resolves.toEqual({ result: 7 });
+		});
+
+		it('handles signal without addEventListener gracefully', async () => {
+			const mockSignal = {
+				aborted: false,
+			} as AbortSignal;
+
+			const promise = client.call('add', { a: 1, b: 2 }, { signal: mockSignal });
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'add',
+				response: { result: 3 },
+			});
+
+			await expect(promise).resolves.toEqual({ result: 3 });
+		});
+
+		it('rejects immediately if signal.aborted is true without addEventListener', async () => {
+			const mockSignal = {
+				aborted: true,
+			} as AbortSignal;
+
+			const promise = client.call('slow', undefined, { signal: mockSignal });
+
+			await expect(promise).rejects.toThrow(/aborted/);
+			await expect(promise).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+			expect(transport.getSentCount()).toBe(0);
+		});
+	});
 });

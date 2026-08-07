@@ -20,6 +20,7 @@ interface PendingRequest<T = unknown> {
 	timeoutId: ReturnType<typeof setTimeout>;
 	procedure: string;
 	startTime: number;
+	cleanupAbort?: () => void;
 }
 
 type NotificationHandler<
@@ -72,6 +73,7 @@ class RpcClient<
 
 		for (const [, request] of this.pending) {
 			clearTimeout(request.timeoutId);
+			request.cleanupAbort?.();
 			request.reject(
 				new Error(`RPC client destroyed while "${request.procedure}" was pending`),
 			);
@@ -85,8 +87,11 @@ class RpcClient<
 	call<T extends RpcProcedure<Procedures>>(
 		procedure: T,
 		...args: RpcRequest<Procedures, T> extends void
-			? [payload?: void, options?: { timeout?: number }]
-			: [payload: RpcRequest<Procedures, T>, options?: { timeout?: number }]
+			? [payload?: void, options?: { timeout?: number; signal?: AbortSignal }]
+			: [
+					payload: RpcRequest<Procedures, T>,
+					options?: { timeout?: number; signal?: AbortSignal },
+				]
 	): Promise<RpcResponse<Procedures, T>> {
 		if (!this.initialized) {
 			return Promise.reject(new Error('RPC client not initialized. Call init() first.'));
@@ -100,9 +105,12 @@ class RpcClient<
 		this.config.logger.debug(`[RpcClient] "${procedure}"`);
 
 		return new Promise<RpcResponse<Procedures, T>>((resolve, reject) => {
+			let cleanupAbort: (() => void) | undefined;
+
 			const timeoutId = setTimeout(() => {
 				if (this.pending.has(id)) {
 					this.pending.delete(id);
+					cleanupAbort?.();
 					const elapsed = Date.now() - startTime;
 					reject(
 						new Error(
@@ -112,12 +120,43 @@ class RpcClient<
 				}
 			}, timeout);
 
+			if (options?.signal) {
+				const signal = options.signal;
+
+				if (signal.aborted) {
+					clearTimeout(timeoutId);
+					const error = new Error(`RPC call "${procedure}" was aborted`);
+					error.name = 'AbortError';
+					reject(error);
+					return;
+				}
+
+				if (typeof signal.addEventListener === 'function') {
+					const abortHandler = () => {
+						if (this.pending.has(id)) {
+							this.pending.delete(id);
+							clearTimeout(timeoutId);
+							const error = new Error(`RPC call "${procedure}" was aborted`);
+							error.name = 'AbortError';
+							reject(error);
+						}
+					};
+
+					signal.addEventListener('abort', abortHandler, { once: true });
+
+					cleanupAbort = () => {
+						signal.removeEventListener('abort', abortHandler);
+					};
+				}
+			}
+
 			this.pending.set(id, {
 				resolve: resolve as (value: unknown) => void,
 				reject,
 				timeoutId,
 				procedure,
 				startTime,
+				cleanupAbort,
 			});
 
 			const message: RpcRequestMessage<Procedures, T> = {
@@ -174,6 +213,7 @@ class RpcClient<
 		}
 
 		clearTimeout(pending.timeoutId);
+		pending.cleanupAbort?.();
 		this.pending.delete(id);
 
 		const duration = Date.now() - pending.startTime;
