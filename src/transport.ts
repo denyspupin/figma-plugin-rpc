@@ -64,8 +64,7 @@ export class FigmaUiTransport implements RpcTransport {
 
 export class FigmaMainTransport implements RpcTransport {
 	private handlers = new Set<(message: unknown) => void>();
-	private listening = false;
-	private originalOnMessage: ((message: unknown) => void) | null = null;
+	private messageHandler: ((pluginMessage: unknown) => void) | null = null;
 
 	send(message: unknown): void {
 		figma.ui.postMessage(message);
@@ -74,24 +73,20 @@ export class FigmaMainTransport implements RpcTransport {
 	onMessage(handler: (message: unknown) => void): () => void {
 		this.handlers.add(handler);
 
-		if (!this.listening) {
-			this.originalOnMessage =
-				(figma.ui.onmessage as ((message: unknown) => void) | null) ?? null;
-			figma.ui.onmessage = (message: unknown) => {
+		if (!this.messageHandler) {
+			this.messageHandler = (pluginMessage: unknown) => {
 				for (const h of this.handlers) {
-					h(message);
+					h(pluginMessage);
 				}
-				this.originalOnMessage?.(message);
 			};
-			this.listening = true;
+			figma.ui.on('message', this.messageHandler);
 		}
 
 		return () => {
 			this.handlers.delete(handler);
-			if (this.handlers.size === 0 && this.listening) {
-				figma.ui.onmessage = this.originalOnMessage ?? (() => {});
-				this.originalOnMessage = null;
-				this.listening = false;
+			if (this.handlers.size === 0 && this.messageHandler) {
+				figma.ui.off('message', this.messageHandler);
+				this.messageHandler = null;
 			}
 		};
 	}
