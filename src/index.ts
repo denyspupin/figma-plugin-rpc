@@ -21,6 +21,6 @@ export { RpcClient, createRpcClient } from './client';
 export type { RpcClientConfig } from './client';
 
 export { RpcServer, createRpcServer } from './server';
-export type { RpcServerConfig, RpcHandler } from './server';
+export type { RpcServerConfig, RpcHandler, RpcValidator } from './server';
 
 export { RpcError } from './error';
