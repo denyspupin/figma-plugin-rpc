@@ -5,6 +5,7 @@ export type {
 	RpcNotification,
 	RpcRequest,
 	RpcResponse,
+	RpcProcedureError,
 	RpcNotificationPayload,
 	RpcRequestMessage,
 	RpcResponseMessage,
@@ -21,3 +22,5 @@ export type { RpcClientConfig } from './client';
 
 export { RpcServer, createRpcServer } from './server';
 export type { RpcServerConfig, RpcHandler } from './server';
+
+export { RpcError } from './error';

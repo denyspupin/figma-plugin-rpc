@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RpcClient, RpcServer, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
+import {
+	RpcClient,
+	RpcError,
+	RpcServer,
+	type RpcNotificationSchema,
+	type RpcProcedureSchema,
+} from '../src';
 import { TestTransport } from './test-utils';
 
 interface TestProcedures extends RpcProcedureSchema {
@@ -163,5 +169,56 @@ describe('E2E: RpcClient + RpcServer', () => {
 		vi.advanceTimersByTime(30001);
 		await expect(promise).rejects.toThrow(/timed out/);
 		vi.useRealTimers();
+	});
+
+	describe('Structured errors', () => {
+		it('propagates RpcError from server to client with code and data', async () => {
+			server.registerHandler('fail', () => {
+				throw new RpcError('VALIDATION', 'Invalid input', { field: 'email' });
+			});
+
+			try {
+				await client.call('fail');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RpcError);
+				const rpcError = error as RpcError;
+				expect(rpcError.code).toBe('VALIDATION');
+				expect(rpcError.message).toBe('Invalid input');
+				expect(rpcError.data).toEqual({ field: 'email' });
+			}
+		});
+
+		it('propagates plain Error as plain Error (back-compat)', async () => {
+			server.registerHandler('fail', () => {
+				throw new Error('Something went wrong');
+			});
+
+			try {
+				await client.call('fail');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(Error);
+				expect(error).not.toBeInstanceOf(RpcError);
+				expect((error as Error).message).toBe('Something went wrong');
+			}
+		});
+
+		it('propagates RpcError without data', async () => {
+			server.registerHandler('fail', () => {
+				throw new RpcError('FORBIDDEN', 'Access denied');
+			});
+
+			try {
+				await client.call('fail');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RpcError);
+				const rpcError = error as RpcError;
+				expect(rpcError.code).toBe('FORBIDDEN');
+				expect(rpcError.message).toBe('Access denied');
+				expect(rpcError.data).toBeUndefined();
+			}
+		});
 	});
 });

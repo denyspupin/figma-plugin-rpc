@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RpcServer, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
+import { RpcError, RpcServer, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
 import { TestTransport } from './test-utils';
 
 interface TestProcedures extends RpcProcedureSchema {
@@ -187,5 +187,73 @@ describe('RpcServer', () => {
 		});
 
 		expect(transport.getSentCount()).toBe(0);
+	});
+
+	describe('Structured errors', () => {
+		it('sends RpcError with code and data when handler throws RpcError', async () => {
+			server.registerHandler('fail', () => {
+				throw new RpcError('NOT_FOUND', 'Item not found', { id: 42 });
+			});
+
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Item not found');
+			expect(response.code).toBe('NOT_FOUND');
+			expect(response.data).toEqual({ id: 42 });
+		});
+
+		it('sends plain error when handler throws regular Error', async () => {
+			server.registerHandler('fail', () => {
+				throw new Error('Something broke');
+			});
+
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Something broke');
+			expect(response.code).toBeUndefined();
+			expect(response.data).toBeUndefined();
+		});
+
+		it('sends RpcError without data when thrown without data', async () => {
+			server.registerHandler('fail', () => {
+				throw new RpcError('FORBIDDEN', 'Access denied');
+			});
+
+			transport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Access denied');
+			expect(response.code).toBe('FORBIDDEN');
+			expect(response.data).toBeUndefined();
+		});
 	});
 });

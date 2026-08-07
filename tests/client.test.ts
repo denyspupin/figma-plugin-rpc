@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RpcClient, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
+import { RpcClient, RpcError, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
 import { TestTransport } from './test-utils';
 
 interface TestProcedures extends RpcProcedureSchema {
@@ -509,6 +509,78 @@ describe('RpcClient', () => {
 			await expect(promise).rejects.toThrow(/aborted/);
 			await expect(promise).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
 			expect(transport.getSentCount()).toBe(0);
+		});
+	});
+
+	describe('Structured errors', () => {
+		it('rejects with RpcError when response has code', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Item not found',
+				code: 'NOT_FOUND',
+				data: { id: 42 },
+			});
+
+			try {
+				await promise;
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RpcError);
+				const rpcError = error as RpcError;
+				expect(rpcError.code).toBe('NOT_FOUND');
+				expect(rpcError.message).toBe('Item not found');
+				expect(rpcError.data).toEqual({ id: 42 });
+			}
+		});
+
+		it('rejects with plain Error when response has no code (back-compat)', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Data not found',
+			});
+
+			try {
+				await promise;
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(Error);
+				expect(error).not.toBeInstanceOf(RpcError);
+				expect((error as Error).message).toBe('Data not found');
+			}
+		});
+
+		it('rejects with RpcError without data when data is not provided', async () => {
+			const promise = client.call('get-data');
+
+			const sent = transport.getLastSent() as { id: string };
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'get-data',
+				error: 'Access denied',
+				code: 'FORBIDDEN',
+			});
+
+			try {
+				await promise;
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RpcError);
+				const rpcError = error as RpcError;
+				expect(rpcError.code).toBe('FORBIDDEN');
+				expect(rpcError.message).toBe('Access denied');
+				expect(rpcError.data).toBeUndefined();
+			}
 		});
 	});
 });

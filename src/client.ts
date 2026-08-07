@@ -13,6 +13,7 @@ import type {
 import { isRpcNotification, isRpcResponse, PROTOCOL_VERSION } from './types';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
+import { RpcError } from './error';
 
 interface PendingRequest<T = unknown> {
 	resolve: (value: T) => void;
@@ -220,7 +221,11 @@ class RpcClient<
 
 		if ('error' in msg) {
 			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${msg.error}`);
-			pending.reject(new Error(msg.error));
+			if ('code' in msg && msg.code) {
+				pending.reject(new RpcError(msg.code, msg.error, msg.data));
+			} else {
+				pending.reject(new Error(msg.error));
+			}
 		} else {
 			this.config.logger.debug(
 				`[RpcClient] "${procedure}" completed in ${formatDuration(duration)}`,
