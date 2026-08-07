@@ -22,9 +22,12 @@ type HandlerRegistry<Schema extends RpcProcedureSchema> = {
 	[K in RpcProcedure<Schema>]?: RpcHandler<Schema, K>;
 };
 
+export type RpcValidator = (procedure: string, payload: unknown) => void | RpcError;
+
 export interface RpcServerConfig {
 	logger: Logger;
 	onError?: (procedure: string, error: Error) => void;
+	validator?: RpcValidator;
 }
 
 const DEFAULT_CONFIG: RpcServerConfig = {
@@ -96,6 +99,17 @@ class RpcServer<
 			this.sendError(id, procedure, `Unknown procedure: "${procedure}"`);
 			this.config.logger.error(`[RpcServer] Error: No handler for "${procedure}"`);
 			return true;
+		}
+
+		if (this.config.validator) {
+			const validationError = this.config.validator(procedure, msg.payload);
+			if (validationError) {
+				this.sendError(id, procedure, validationError.message, validationError);
+				this.config.logger.error(
+					`[RpcServer] Validation error in "${procedure}": ${validationError.message}`,
+				);
+				return true;
+			}
 		}
 
 		try {

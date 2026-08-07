@@ -256,4 +256,115 @@ describe('RpcServer', () => {
 			expect(response.data).toBeUndefined();
 		});
 	});
+
+	describe('Validator', () => {
+		it('calls validator before handler and proceeds when valid', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const validator = vi.fn(() => undefined);
+			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				validator,
+			});
+			validServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			validServer.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(validator).toHaveBeenCalledWith('add', { a: 1, b: 2 });
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3 });
+
+			validServer.stop();
+		});
+
+		it('rejects with RpcError when validator returns error', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const validator = vi.fn(
+				() => new RpcError('VALIDATION', 'Invalid payload', { field: 'a' }),
+			);
+			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				validator,
+			});
+			validServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			validServer.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 'not a number', b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(validator).toHaveBeenCalledWith('add', { a: 'not a number', b: 2 });
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Invalid payload');
+			expect(response.code).toBe('VALIDATION');
+			expect(response.data).toEqual({ field: 'a' });
+
+			validServer.stop();
+		});
+
+		it('does not call handler when validation fails', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const handler = vi.fn(() => ({ result: 0 }));
+			const validator = vi.fn(() => new RpcError('VALIDATION', 'Invalid'));
+			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				validator,
+			});
+			validServer.registerHandler('add', handler);
+			validServer.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(handler).not.toHaveBeenCalled();
+
+			validServer.stop();
+		});
+
+		it('works without validator (no validation)', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const noValidatorServer = new RpcServer<TestProcedures, TestNotifications>(
+				freshTransport,
+			);
+			noValidatorServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			noValidatorServer.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3 });
+
+			noValidatorServer.stop();
+		});
+	});
 });
