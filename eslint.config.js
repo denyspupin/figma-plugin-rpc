@@ -7,13 +7,13 @@ export default defineConfig([
 	js.configs.recommended,
 	...tseslint.configs.recommended,
 
-	globalIgnores(['node_modules/**', 'dist/**', '*.config.{js,ts}', 'tests/**', 'examples/**']),
+	globalIgnores(['node_modules/**', 'dist/**', '*.config.{js,ts}']),
 
 	{
 		languageOptions: {
 			parser: tsParser,
 			parserOptions: {
-				project: './tsconfig.json',
+				project: './tsconfig.check.json',
 				tsconfigRootDir: import.meta.dirname,
 			},
 		},
