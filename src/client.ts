@@ -78,6 +78,7 @@ class RpcClient<
 		}
 
 		this.pending.clear();
+		this.notificationHandlers.clear();
 		this.initialized = false;
 	}
 
@@ -145,6 +146,9 @@ class RpcClient<
 
 		return () => {
 			typedHandlers.delete(handler);
+			if (typedHandlers.size === 0) {
+				this.notificationHandlers.delete(notification);
+			}
 		};
 	}
 

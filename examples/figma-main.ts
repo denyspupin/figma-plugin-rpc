@@ -1,69 +1,39 @@
 import { createRpcServer, FigmaMainTransport } from '../src';
 
 interface Procedures {
-	'get-variables': {
+	'get-selection': {
 		request: void;
-		response: { variables: { id: string; name: string }[] };
+		response: { nodeIds: string[] };
 	};
-	'variableSearch.start': {
-		request: { variableId: string; scope: string };
-		response: { started: boolean };
+	'create-rectangle': {
+		request: { x: number; y: number; width: number; height: number };
+		response: { nodeId: string };
 	};
 }
 
 interface Notifications {
-	'variableSearch.results': {
-		searchId: string;
-		results: { nodeId: string; field: string }[];
-		isComplete: boolean;
-	};
-	'variableSearch.progress': {
-		searchId: string;
-		processed: number;
-		total: number;
-	};
+	'selection-changed': { nodeIds: string[] };
 }
 
 const rpc = createRpcServer<Procedures, Notifications>(new FigmaMainTransport());
 
-rpc.registerHandler('get-variables', () => {
-	const vars = figma.variables.getLocalVariables().map((v) => ({
-		id: v.id,
-		name: v.name,
-	}));
-	return { variables: vars };
+rpc.registerHandler('get-selection', () => ({
+	nodeIds: figma.currentPage.selection.map((n) => n.id),
+}));
+
+rpc.registerHandler('create-rectangle', ({ x, y, width, height }) => {
+	const node = figma.createRectangle();
+	node.x = x;
+	node.y = y;
+	node.resize(width, height);
+	figma.currentPage.appendChild(node);
+	return { nodeId: node.id };
 });
 
-rpc.registerHandler('variableSearch.start', (payload) => {
-	const { variableId, scope } = payload;
-
-	void (async () => {
-		let processed = 0;
-		const pages = scope === 'current-page' ? [figma.currentPage] : figma.root.children;
-		const total = pages.reduce((acc, page) => acc + page.findAll().length, 0);
-
-		for (const page of pages) {
-			const nodes = page.findAll();
-			for (const node of nodes) {
-				processed++;
-				if (processed % 50 === 0) {
-					rpc.notify('variableSearch.progress', {
-						searchId: variableId,
-						processed,
-						total,
-					});
-				}
-			}
-		}
-
-		rpc.notify('variableSearch.results', {
-			searchId: variableId,
-			results: [],
-			isComplete: true,
-		});
-	})();
-
-	return { started: true };
+figma.currentPage.on('selectionchange', () => {
+	rpc.notify('selection-changed', {
+		nodeIds: figma.currentPage.selection.map((n) => n.id),
+	});
 });
 
 rpc.start();
