@@ -11,7 +11,7 @@ const {
 	FigmaMainTransport,
 	noopLogger,
 	formatDuration,
-} = require('../../dist/index.cjs');
+} = require('figma-plugin-rpc');
 
 const checks = [];
 

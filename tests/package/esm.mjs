@@ -11,7 +11,7 @@ import {
 	FigmaMainTransport,
 	noopLogger,
 	formatDuration,
-} from '../../dist/index.js';
+} from 'figma-plugin-rpc';
 
 const checks = [];
 

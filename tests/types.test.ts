@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRpcNotification, isRpcRequest, isRpcResponse, PROTOCOL_VERSION } from '../src/types';
+import { isRpcNotification, isRpcRequest, isRpcResponse, PROTOCOL_VERSION } from '../src';
 
 describe('PROTOCOL_VERSION', () => {
 	it('is defined and equals 1', () => {
@@ -239,5 +239,23 @@ describe('isRpcNotification', () => {
 
 	it('returns false for null', () => {
 		expect(isRpcNotification(null)).toBe(false);
+	});
+});
+
+describe('message kind exclusivity', () => {
+	it('never classifies one message as multiple kinds', () => {
+		const mixed = {
+			__rpc: true,
+			__rpcNotification: true,
+			id: 'abc',
+			procedure: 'test',
+			notification: 'update',
+			payload: {},
+			response: {},
+		};
+
+		expect(isRpcRequest(mixed)).toBe(false);
+		expect(isRpcResponse(mixed)).toBe(false);
+		expect(isRpcNotification(mixed)).toBe(false);
 	});
 });

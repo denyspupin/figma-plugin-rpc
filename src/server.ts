@@ -2,7 +2,6 @@ import type {
 	RpcNotification,
 	RpcNotificationMessage,
 	RpcNotificationPayload,
-	RpcNotificationSchema,
 	RpcProcedure,
 	RpcRequest,
 	RpcResponse,
@@ -31,10 +30,7 @@ const DEFAULT_CONFIG: RpcServerConfig = {
 	logger: noopLogger,
 };
 
-class RpcServer<
-	Procedures extends ProcedureConstraint<Procedures>,
-	Notifications extends RpcNotificationSchema,
-> {
+class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notifications extends object> {
 	private handlers = new Map<string, RpcHandler<Procedures, RpcProcedure<Procedures>>>();
 	private config: RpcServerConfig;
 	private unsubscribeTransport: (() => void) | null = null;
@@ -94,6 +90,14 @@ class RpcServer<
 		const decoded = decodeRpcMessage(msg);
 
 		if (!decoded.ok) {
+			const correlation = decoded.error.correlation;
+			if (correlation?.kind === 'request' && correlation.procedure) {
+				this.safeSendError(
+					correlation.id,
+					correlation.procedure,
+					`Protocol error: ${decoded.error.reason}`,
+				);
+			}
 			this.safeLog(
 				'debug',
 				`[RpcServer] Ignoring malformed message: ${decoded.error.reason}`,
@@ -193,8 +197,8 @@ class RpcServer<
 				response,
 			};
 			this.transport.send(message);
-		} catch {
-			// transport send failure during response — nothing more we can do
+		} catch (error) {
+			this.reportSendFailure(procedure, error);
 		}
 	}
 
@@ -209,9 +213,15 @@ class RpcServer<
 				...(rpcError && { code: rpcError.code, data: rpcError.data }),
 			};
 			this.transport.send(message);
-		} catch {
-			// transport send failure during error response — nothing more we can do
+		} catch (sendFailure) {
+			this.reportSendFailure(procedure, sendFailure);
 		}
+	}
+
+	private reportSendFailure(procedure: string, error: unknown): void {
+		const normalized = error instanceof Error ? error : new Error(String(error));
+		this.safeLog('error', `[RpcServer] Transport send failed for "${procedure}":`, normalized);
+		this.safeOnError(procedure, normalized);
 	}
 
 	private safeLog(level: 'log' | 'debug' | 'warn' | 'error', ...args: unknown[]): void {
@@ -234,7 +244,7 @@ class RpcServer<
 
 function createRpcServer<
 	Procedures extends ProcedureConstraint<Procedures>,
-	Notifications extends RpcNotificationSchema,
+	Notifications extends object,
 >(
 	transport: RpcTransport,
 	config?: Partial<RpcServerConfig>,

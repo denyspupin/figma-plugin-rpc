@@ -32,7 +32,7 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 
 - **Type-safe procedures** — Define once, full inference on both sides
 - **Streaming notifications** — Server-to-client pub/sub for progress, selection changes, etc.
-- **Structured errors** — Typed error codes and data with `RpcError`
+- **Structured errors** — Error codes and data carried by `RpcError`
 - **Cancellation** — Abort in-flight calls with `AbortSignal`
 - **Validation** — Pluggable runtime validation (e.g., zod)
 - **Zero config** — Built-in transports work out of the box
@@ -166,7 +166,7 @@ export interface Procedures extends RpcProcedureSchema {
 		response: { pageCount: number; selectionCount: number };
 	};
 
-	// With typed error
+	// With declared error metadata
 	'delete-node': {
 		request: { nodeId: string };
 		response: { success: boolean };
@@ -203,12 +203,12 @@ interface Procedures extends RpcProcedureSchema {
 	'create-node': {
 		request: { type: 'rectangle' | 'ellipse'; x: number; y: number };
 		response: { nodeId: string };
-		error?: { code: string; message: string }; // optional typed error shape
+		error?: { code: string; message: string }; // optional error metadata
 	};
 }
 ```
 
-> **Note:** The `error` member in a procedure definition is a type-level contract. You can extract it with `RpcProcedureError<Procedures, 'create-node'>`, but TypeScript `catch` values are always `unknown`. Use `instanceof RpcError` to narrow.
+> **Note:** The `error` member is optional type metadata. You can extract it with `RpcProcedureError<Procedures, 'create-node'>`, but it does not constrain thrown values or create typed Promise rejections. TypeScript `catch` values are always `unknown`; use `instanceof RpcError` to narrow runtime errors.
 
 ### `createRpcClient(transport, config?)`
 
@@ -331,7 +331,9 @@ rpc.registerHandler('risky-operation', () => {
 try {
 	await rpc.call('risky-operation');
 } catch (error) {
-	console.error(error.message); // "Something went wrong"
+	if (error instanceof Error) {
+		console.error(error.message); // "Something went wrong"
+	}
 }
 ```
 
@@ -371,7 +373,7 @@ try {
 }
 ```
 
-> The `error` field in your procedure schema is a type-level contract extractable with `RpcProcedureError`. At runtime, always use `instanceof RpcError` to check and `error.code` to discriminate.
+> The `error` field is metadata extractable with `RpcProcedureError`; handlers and thrown values do not automatically enforce it. At runtime, use `instanceof RpcError` and inspect `error.code`.
 
 #### Global error handler
 
@@ -420,8 +422,10 @@ When a call times out, you get a clear error message:
 try {
 	await rpc.call('slow-operation');
 } catch (error) {
-	console.error(error.message);
-	// "RPC call "slow-operation" timed out after 30s (limit: 30s)"
+	if (error instanceof Error) {
+		console.error(error.message);
+		// "RPC call "slow-operation" timed out after 30s (limit: 30s)"
+	}
 }
 ```
 
@@ -446,7 +450,7 @@ setTimeout(() => controller.abort(), 5000);
 try {
 	await promise;
 } catch (error) {
-	if (error.name === 'AbortError') {
+	if (error instanceof Error && error.name === 'AbortError') {
 		console.log('Stopped awaiting (server may still be running)');
 	}
 }
@@ -480,7 +484,7 @@ function SearchInput() {
 			);
 			setResults(items);
 		} catch (error) {
-			if (error.name !== 'AbortError') {
+			if (!(error instanceof Error) || error.name !== 'AbortError') {
 				console.error(error);
 			}
 		}
@@ -624,6 +628,21 @@ await rpc.call('typo-procedure'); // Error!
 await rpc.call('create-rectangle', { x: 'not a number' }); // Error!
 ```
 
+Generic wrappers should carry the same self-mapped constraint used by the client and server:
+
+```ts
+import type { ProcedureConstraint, RpcTransport } from 'figma-plugin-rpc';
+
+function makeClient<
+	Procedures extends ProcedureConstraint<Procedures>,
+	Notifications extends object,
+>(transport: RpcTransport) {
+	return createRpcClient<Procedures, Notifications>(transport);
+}
+```
+
+Earlier wrappers written as `Procedures extends RpcProcedureSchema` should migrate to this constraint. Concrete schemas that use `interface Procedures extends RpcProcedureSchema` remain unchanged.
+
 ### Protocol versioning
 
 The wire protocol includes a version field (`v: 1`). The library:
@@ -632,7 +651,7 @@ The wire protocol includes a version field (`v: 1`). The library:
 - **Accepts** messages with `v: 1` or no `v` (legacy compatibility)
 - **Rejects** messages with unsupported versions (e.g., `v: 2`)
 
-Malformed messages are silently ignored with a debug log entry.
+Malformed uncorrelated messages are ignored with a debug log entry. When correlation data is available, malformed requests receive a protocol error and malformed responses immediately reject the matching pending call.
 
 ### Custom transports
 

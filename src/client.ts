@@ -2,7 +2,6 @@ import { nanoid } from 'nanoid';
 import type {
 	RpcNotification,
 	RpcNotificationPayload,
-	RpcNotificationSchema,
 	RpcProcedure,
 	RpcRequest,
 	RpcRequestMessage,
@@ -16,10 +15,9 @@ import type { RpcTransport } from './transport';
 import { RpcError } from './error';
 import { PendingCall } from './pending-call';
 
-type NotificationHandler<
-	Schema extends RpcNotificationSchema,
-	T extends RpcNotification<Schema>,
-> = (payload: RpcNotificationPayload<Schema, T>) => void;
+type NotificationHandler<Schema extends object, T extends RpcNotification<Schema>> = (
+	payload: RpcNotificationPayload<Schema, T>,
+) => void;
 
 export interface RpcClientConfig {
 	defaultTimeout: number;
@@ -31,10 +29,7 @@ const DEFAULT_CONFIG: RpcClientConfig = {
 	logger: noopLogger,
 };
 
-class RpcClient<
-	Procedures extends ProcedureConstraint<Procedures>,
-	Notifications extends RpcNotificationSchema,
-> {
+class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notifications extends object> {
 	private pending = new Map<string, PendingCall>();
 	private notificationHandlers = new Map<string, Set<(payload: unknown) => void>>();
 	private initialized = false;
@@ -55,13 +50,13 @@ class RpcClient<
 
 		this.unsubscribeTransport = this.transport.onMessage((msg) => this.onMessage(msg));
 		this.initialized = true;
-		this.config.logger.log('[RpcClient] Initialized');
+		this.safeLog('log', '[RpcClient] Initialized');
 	}
 
 	destroy(): void {
-		if (!this.initialized) return;
-
-		this.unsubscribeTransport?.();
+		if (this.initialized) {
+			this.unsubscribeTransport?.();
+		}
 		this.unsubscribeTransport = null;
 
 		for (const [, call] of this.pending) {
@@ -91,7 +86,7 @@ class RpcClient<
 		const timeout = options?.timeout ?? this.config.defaultTimeout;
 		const startTime = Date.now();
 
-		this.config.logger.debug(`[RpcClient] "${procedure}"`);
+		this.safeLog('debug', `[RpcClient] "${procedure}"`);
 
 		return new Promise<RpcResponse<Procedures, T>>((resolve, reject) => {
 			const signal = options?.signal;
@@ -190,7 +185,20 @@ class RpcClient<
 		const decoded = decodeRpcMessage(msg);
 
 		if (!decoded.ok) {
-			this.config.logger.debug(
+			const correlation = decoded.error.correlation;
+			if (correlation?.kind === 'response') {
+				const call = this.pending.get(correlation.id);
+				if (call) {
+					call.reject(
+						new Error(
+							`Protocol error for "${call.procedure}": ${decoded.error.reason}`,
+						),
+					);
+				}
+			}
+
+			this.safeLog(
+				'debug',
 				`[RpcClient] Ignoring malformed message: ${decoded.error.reason}`,
 			);
 			return;
@@ -230,17 +238,18 @@ class RpcClient<
 
 		if (!decoded.success) {
 			const error = decoded.error ?? 'Unknown error';
-			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${error}`);
 			if (decoded.code) {
 				call.reject(new RpcError(decoded.code, error, decoded.data));
 			} else {
 				call.reject(new Error(error));
 			}
+			this.safeLog('error', `[RpcClient] Error in "${procedure}": ${error}`);
 		} else {
-			this.config.logger.debug(
+			call.resolve(decoded.response);
+			this.safeLog(
+				'debug',
 				`[RpcClient] "${procedure}" completed in ${formatDuration(duration)}`,
 			);
-			call.resolve(decoded.response);
 		}
 	}
 
@@ -254,11 +263,16 @@ class RpcClient<
 			try {
 				handler(payload);
 			} catch (error) {
-				this.config.logger.error(
-					`[RpcClient] Error in handler for "${notification}":`,
-					error,
-				);
+				this.safeLog('error', `[RpcClient] Error in handler for "${notification}":`, error);
 			}
+		}
+	}
+
+	private safeLog(level: 'log' | 'debug' | 'warn' | 'error', ...args: unknown[]): void {
+		try {
+			this.config.logger[level](...args);
+		} catch {
+			// logging must not alter client lifecycle or settlement
 		}
 	}
 
@@ -273,7 +287,7 @@ class RpcClient<
 
 function createRpcClient<
 	Procedures extends ProcedureConstraint<Procedures>,
-	Notifications extends RpcNotificationSchema,
+	Notifications extends object,
 >(
 	transport: RpcTransport,
 	config?: Partial<RpcClientConfig>,

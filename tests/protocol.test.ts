@@ -146,6 +146,11 @@ describe('decodeRpcMessage', () => {
 			expect(result.ok).toBe(false);
 			if (!result.ok) {
 				expect(result.error.reason).toContain('unsupported protocol version');
+				expect(result.error.correlation).toEqual({
+					kind: 'request',
+					id: 'req-1',
+					procedure: 'add',
+				});
 			}
 		});
 
@@ -258,7 +263,24 @@ describe('decodeRpcMessage', () => {
 			expect(result.ok).toBe(false);
 			if (!result.ok) {
 				expect(result.error.reason).toContain('both');
+				expect(result.error.correlation).toEqual({
+					kind: 'response',
+					id: 'req-1',
+					procedure: 'add',
+				});
 			}
+		});
+
+		it('rejects error-only fields on success responses', () => {
+			expect(
+				decodeRpcMessage({
+					__rpc: true,
+					id: 'req-1',
+					procedure: 'add',
+					response: { result: 3 },
+					code: 'UNEXPECTED',
+				}).ok,
+			).toBe(false);
 		});
 
 		it('rejects neither response nor error present', () => {
@@ -415,6 +437,35 @@ describe('decodeRpcMessage', () => {
 	});
 
 	describe('unrecognized messages', () => {
+		it('rejects conflicting RPC markers', () => {
+			const message = {
+				__rpc: true,
+				__rpcNotification: true,
+				id: '1',
+				procedure: 'add',
+				notification: 'update',
+				payload: {},
+			};
+
+			expect(decodeRpcMessage(message).ok).toBe(false);
+			expect(isValidRpcRequest(message)).toBe(false);
+			expect(isValidRpcNotification(message)).toBe(false);
+		});
+
+		it('rejects mixed request and response fields', () => {
+			const message = {
+				__rpc: true,
+				id: '1',
+				procedure: 'add',
+				payload: {},
+				response: {},
+			};
+
+			expect(decodeRpcMessage(message).ok).toBe(false);
+			expect(isValidRpcRequest(message)).toBe(false);
+			expect(isValidRpcResponse(message)).toBe(false);
+		});
+
 		it('rejects empty object', () => {
 			expect(decodeRpcMessage({}).ok).toBe(false);
 		});

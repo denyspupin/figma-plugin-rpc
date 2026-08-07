@@ -32,6 +32,11 @@ export type DecodedRpcMessage = DecodedRpcRequest | DecodedRpcResponse | Decoded
 
 export interface DecodeError {
 	reason: string;
+	correlation?: {
+		kind: 'request' | 'response';
+		id: string;
+		procedure?: string;
+	};
 }
 
 export type DecodeResult =
@@ -75,6 +80,25 @@ function readNonEmptyString(msg: Record<string, unknown>, key: string): string |
 	}
 
 	return value;
+}
+
+function withCorrelation(
+	error: DecodeError,
+	msg: Record<string, unknown>,
+	kind: 'request' | 'response',
+): DecodeError {
+	const id = readNonEmptyString(msg, 'id');
+	if (!id) return error;
+
+	const procedure = readNonEmptyString(msg, 'procedure');
+	return {
+		...error,
+		correlation: {
+			kind,
+			id,
+			...(procedure && { procedure }),
+		},
+	};
 }
 
 function decodeRequest(msg: Record<string, unknown>): DecodedRpcRequest | DecodeError {
@@ -166,6 +190,10 @@ function decodeResponse(msg: Record<string, unknown>): DecodedRpcResponse | Deco
 		return result;
 	}
 
+	if (hasOwn(msg, 'code') || hasOwn(msg, 'data')) {
+		return { reason: 'success response contains error-only fields' };
+	}
+
 	return {
 		kind: 'response',
 		id,
@@ -208,22 +236,38 @@ export function decodeRpcMessage(raw: unknown): DecodeResult {
 	const isRpcFlag = hasOwn(raw, '__rpc') && raw.__rpc === true;
 	const isNotificationFlag = hasOwn(raw, '__rpcNotification') && raw.__rpcNotification === true;
 
+	if (isRpcFlag && isNotificationFlag) {
+		return { ok: false, error: { reason: 'message contains conflicting RPC markers' } };
+	}
+
 	if (isRpcFlag) {
+		const hasPayload = hasOwn(raw, 'payload');
 		const hasResponseOrError = hasOwn(raw, 'response') || hasOwn(raw, 'error');
+
+		if (hasPayload && hasResponseOrError) {
+			return {
+				ok: false,
+				error: withCorrelation(
+					{ reason: 'message mixes request and response fields' },
+					raw,
+					'response',
+				),
+			};
+		}
 
 		if (hasResponseOrError) {
 			const result = decodeResponse(raw);
 			if ('reason' in result) {
-				return { ok: false, error: result };
+				return { ok: false, error: withCorrelation(result, raw, 'response') };
 			}
 
 			return { ok: true, value: result };
 		}
 
-		if (hasOwn(raw, 'procedure')) {
+		if (hasPayload || hasOwn(raw, 'procedure')) {
 			const result = decodeRequest(raw);
 			if ('reason' in result) {
-				return { ok: false, error: result };
+				return { ok: false, error: withCorrelation(result, raw, 'request') };
 			}
 
 			return { ok: true, value: result };
@@ -247,17 +291,21 @@ export function decodeRpcMessage(raw: unknown): DecodeResult {
 	return { ok: false, error: { reason: 'unrecognized message format' } };
 }
 
-export function isValidRpcRequest(msg: unknown): msg is RpcRequestMessage {
+export function isRpcRequest(msg: unknown): msg is RpcRequestMessage {
 	const result = decodeRpcMessage(msg);
 	return result.ok && result.value.kind === 'request';
 }
 
-export function isValidRpcResponse(msg: unknown): msg is RpcResponseMessage {
+export function isRpcResponse(msg: unknown): msg is RpcResponseMessage {
 	const result = decodeRpcMessage(msg);
 	return result.ok && result.value.kind === 'response';
 }
 
-export function isValidRpcNotification(msg: unknown): msg is RpcNotificationMessage {
+export function isRpcNotification(msg: unknown): msg is RpcNotificationMessage {
 	const result = decodeRpcMessage(msg);
 	return result.ok && result.value.kind === 'notification';
 }
+
+export const isValidRpcRequest = isRpcRequest;
+export const isValidRpcResponse = isRpcResponse;
+export const isValidRpcNotification = isRpcNotification;

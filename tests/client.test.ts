@@ -72,7 +72,7 @@ describe('RpcClient', () => {
 		await expect(promise).rejects.toThrow('Data not found');
 	});
 
-	it('ignores malformed response with both response and error', async () => {
+	it('rejects a correlated malformed response immediately', async () => {
 		const promise = client.call('get-data');
 
 		const sent = transport.getLastSent() as { id: string };
@@ -84,9 +84,8 @@ describe('RpcClient', () => {
 			error: 'Something went wrong',
 		});
 
-		await new Promise((r) => setTimeout(r, 10));
-		expect(client.getPendingCount()).toBe(1);
-		promise.catch(() => {});
+		await expect(promise).rejects.toThrow('Protocol error');
+		expect(client.getPendingCount()).toBe(0);
 	});
 
 	it('ignores responses for unknown ids', () => {
@@ -657,5 +656,94 @@ describe('RpcClient', () => {
 			await expect(promise).rejects.toThrow('Protocol error');
 			expect(client.getPendingCount()).toBe(0);
 		});
+	});
+
+	describe('Logger containment', () => {
+		it('a throwing logger cannot change call or settlement behavior', async () => {
+			const throwingLogger = {
+				log: () => {
+					throw new Error('logger failed');
+				},
+				debug: () => {
+					throw new Error('logger failed');
+				},
+				warn: () => {
+					throw new Error('logger failed');
+				},
+				error: () => {
+					throw new Error('logger failed');
+				},
+			};
+			const [freshTransport] = TestTransport.createPair();
+			const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport, {
+				logger: throwingLogger,
+			});
+
+			expect(() => c.init()).not.toThrow();
+			const promise = c.call('add', { a: 1, b: 2 });
+			const sent = freshTransport.getLastSent() as { id: string };
+
+			expect(() => {
+				freshTransport.deliver({
+					__rpc: true,
+					id: sent.id,
+					procedure: 'add',
+					response: { result: 3 },
+				});
+			}).not.toThrow();
+
+			await expect(promise).resolves.toEqual({ result: 3 });
+			expect(c.getPendingCount()).toBe(0);
+			c.destroy();
+		});
+
+		it('a throwing error logger does not stop later notification handlers', () => {
+			const throwingLogger = {
+				log: () => {},
+				debug: () => {},
+				warn: () => {},
+				error: () => {
+					throw new Error('logger failed');
+				},
+			};
+			const [freshTransport] = TestTransport.createPair();
+			const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport, {
+				logger: throwingLogger,
+			});
+			const laterHandler = vi.fn();
+			c.on('progress', () => {
+				throw new Error('handler failed');
+			});
+			c.on('progress', laterHandler);
+			c.init();
+
+			expect(() => {
+				freshTransport.deliver({
+					__rpcNotification: true,
+					notification: 'progress',
+					payload: { percent: 50 },
+				});
+			}).not.toThrow();
+			expect(laterHandler).toHaveBeenCalledOnce();
+			c.destroy();
+		});
+	});
+
+	it('destroy clears handlers registered before initialization', () => {
+		const [freshTransport] = TestTransport.createPair();
+		const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport);
+		const handler = vi.fn();
+		c.on('progress', handler);
+
+		c.destroy();
+		c.init();
+		freshTransport.deliver({
+			__rpcNotification: true,
+			notification: 'progress',
+			payload: { percent: 50 },
+		});
+
+		expect(handler).not.toHaveBeenCalled();
+		c.destroy();
 	});
 });

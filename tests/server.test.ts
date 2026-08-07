@@ -258,6 +258,23 @@ describe('RpcServer', () => {
 	});
 
 	describe('Handler safety', () => {
+		it('returns a protocol error for a correlated unsupported request version', async () => {
+			transport.deliver({
+				__rpc: true,
+				v: 2,
+				id: 'req-version',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.id).toBe('req-version');
+			expect(response.error).toContain('unsupported protocol version');
+		});
+
 		it('returns unknown procedure error for "toString" when not registered', async () => {
 			transport.deliver({
 				__rpc: true,
@@ -477,6 +494,51 @@ describe('RpcServer', () => {
 			});
 
 			await new Promise((r) => setTimeout(r, 20));
+			s.stop();
+		});
+
+		it('reports transport send failures through logger and onError', async () => {
+			const listeners = new Set<(msg: unknown) => void>();
+			const transportError = new Error('transport broken');
+			const brokenTransport = {
+				send: () => {
+					throw transportError;
+				},
+				onMessage: (handler: (msg: unknown) => void) => {
+					listeners.add(handler);
+					return () => listeners.delete(handler);
+				},
+			};
+			const logger = {
+				log: vi.fn(),
+				debug: vi.fn(),
+				warn: vi.fn(),
+				error: vi.fn(),
+			};
+			const onError = vi.fn();
+			const s = new RpcServer<TestProcedures, TestNotifications>(brokenTransport, {
+				logger,
+				onError,
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			for (const listener of listeners) {
+				listener({
+					__rpc: true,
+					id: 'req-1',
+					procedure: 'add',
+					payload: { a: 1, b: 2 },
+				});
+			}
+
+			await vi.waitFor(() => {
+				expect(onError).toHaveBeenCalledWith('add', transportError);
+			});
+			expect(logger.error).toHaveBeenCalledWith(
+				expect.stringContaining('Transport send failed'),
+				transportError,
+			);
 			s.stop();
 		});
 
