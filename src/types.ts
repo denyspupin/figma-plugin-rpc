@@ -1,33 +1,47 @@
-export interface RpcProcedureSchema {
-	[name: string]: {
-		request: unknown;
-		response: unknown;
-		error?: unknown;
-	};
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface RpcProcedureSchema {}
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface RpcNotificationSchema {}
+
+export interface RpcProcedureDefinition {
+	request: unknown;
+	response: unknown;
+	error?: unknown;
 }
 
-export interface RpcNotificationSchema {
+export type ProcedureConstraint<Schema> = {
+	[K in Extract<keyof Schema, string>]-?: RpcProcedureDefinition;
+};
+
+interface OpenRpcProcedureSchema {
+	[name: string]: RpcProcedureDefinition;
+}
+
+interface OpenRpcNotificationSchema {
 	[name: string]: unknown;
 }
 
-export type RpcProcedure<Schema extends RpcProcedureSchema = RpcProcedureSchema> = keyof Schema &
-	string;
+export type RpcProcedure<Schema extends RpcProcedureSchema = OpenRpcProcedureSchema> = Extract<
+	keyof Schema,
+	string
+>;
 
-export type RpcNotification<Schema extends RpcNotificationSchema = RpcNotificationSchema> =
-	keyof Schema & string;
+export type RpcNotification<Schema extends RpcNotificationSchema = OpenRpcNotificationSchema> =
+	Extract<keyof Schema, string>;
 
 export type RpcRequest<
-	Schema extends RpcProcedureSchema,
+	Schema extends ProcedureConstraint<Schema>,
 	T extends RpcProcedure<Schema>,
 > = Schema[T]['request'];
 
 export type RpcResponse<
-	Schema extends RpcProcedureSchema,
+	Schema extends ProcedureConstraint<Schema>,
 	T extends RpcProcedure<Schema>,
 > = Schema[T]['response'];
 
 export type RpcProcedureError<
-	Schema extends RpcProcedureSchema,
+	Schema extends ProcedureConstraint<Schema>,
 	T extends RpcProcedure<Schema>,
 > = Schema[T] extends { error: infer E } ? E : never;
 
@@ -39,7 +53,7 @@ export type RpcNotificationPayload<
 export const PROTOCOL_VERSION = 1;
 
 export interface RpcRequestMessage<
-	Schema extends RpcProcedureSchema = RpcProcedureSchema,
+	Schema extends ProcedureConstraint<Schema> = OpenRpcProcedureSchema,
 	T extends RpcProcedure<Schema> = RpcProcedure<Schema>,
 > {
 	__rpc: true;
@@ -50,7 +64,7 @@ export interface RpcRequestMessage<
 }
 
 export type RpcResponseMessage<
-	Schema extends RpcProcedureSchema = RpcProcedureSchema,
+	Schema extends ProcedureConstraint<Schema> = OpenRpcProcedureSchema,
 	T extends RpcProcedure<Schema> = RpcProcedure<Schema>,
 > =
 	| {
@@ -71,7 +85,7 @@ export type RpcResponseMessage<
 	  };
 
 export interface RpcNotificationMessage<
-	Schema extends RpcNotificationSchema = RpcNotificationSchema,
+	Schema extends RpcNotificationSchema = OpenRpcNotificationSchema,
 	T extends RpcNotification<Schema> = RpcNotification<Schema>,
 > {
 	__rpcNotification: true;
