@@ -33,7 +33,6 @@ export type DecodedRpcMessage = DecodedRpcRequest | DecodedRpcResponse | Decoded
 export interface DecodeError {
 	reason: string;
 	correlation?: {
-		kind: 'request' | 'response';
 		id: string;
 		procedure?: string;
 	};
@@ -82,11 +81,7 @@ function readNonEmptyString(msg: Record<string, unknown>, key: string): string |
 	return value;
 }
 
-function withCorrelation(
-	error: DecodeError,
-	msg: Record<string, unknown>,
-	kind: 'request' | 'response',
-): DecodeError {
+function withCorrelation(error: DecodeError, msg: Record<string, unknown>): DecodeError {
 	const id = readNonEmptyString(msg, 'id');
 	if (!id) return error;
 
@@ -94,7 +89,6 @@ function withCorrelation(
 	return {
 		...error,
 		correlation: {
-			kind,
 			id,
 			...(procedure && { procedure }),
 		},
@@ -237,28 +231,34 @@ export function decodeRpcMessage(raw: unknown): DecodeResult {
 	const isNotificationFlag = hasOwn(raw, '__rpcNotification') && raw.__rpcNotification === true;
 
 	if (isRpcFlag && isNotificationFlag) {
-		return { ok: false, error: { reason: 'message contains conflicting RPC markers' } };
+		return {
+			ok: false,
+			error: withCorrelation({ reason: 'message contains conflicting RPC markers' }, raw),
+		};
 	}
 
 	if (isRpcFlag) {
 		const hasPayload = hasOwn(raw, 'payload');
-		const hasResponseOrError = hasOwn(raw, 'response') || hasOwn(raw, 'error');
+		const hasResponseFields =
+			hasOwn(raw, 'response') ||
+			hasOwn(raw, 'error') ||
+			hasOwn(raw, 'code') ||
+			hasOwn(raw, 'data');
 
-		if (hasPayload && hasResponseOrError) {
+		if (hasPayload && hasResponseFields) {
 			return {
 				ok: false,
 				error: withCorrelation(
 					{ reason: 'message mixes request and response fields' },
 					raw,
-					'response',
 				),
 			};
 		}
 
-		if (hasResponseOrError) {
+		if (hasResponseFields) {
 			const result = decodeResponse(raw);
 			if ('reason' in result) {
-				return { ok: false, error: withCorrelation(result, raw, 'response') };
+				return { ok: false, error: withCorrelation(result, raw) };
 			}
 
 			return { ok: true, value: result };
@@ -267,7 +267,7 @@ export function decodeRpcMessage(raw: unknown): DecodeResult {
 		if (hasPayload || hasOwn(raw, 'procedure')) {
 			const result = decodeRequest(raw);
 			if ('reason' in result) {
-				return { ok: false, error: withCorrelation(result, raw, 'request') };
+				return { ok: false, error: withCorrelation(result, raw) };
 			}
 
 			return { ok: true, value: result };
@@ -275,7 +275,10 @@ export function decodeRpcMessage(raw: unknown): DecodeResult {
 
 		return {
 			ok: false,
-			error: { reason: '__rpc message has neither procedure nor response/error' },
+			error: withCorrelation(
+				{ reason: '__rpc message has neither procedure nor response/error' },
+				raw,
+			),
 		};
 	}
 

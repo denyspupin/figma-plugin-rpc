@@ -147,7 +147,6 @@ describe('decodeRpcMessage', () => {
 			if (!result.ok) {
 				expect(result.error.reason).toContain('unsupported protocol version');
 				expect(result.error.correlation).toEqual({
-					kind: 'request',
 					id: 'req-1',
 					procedure: 'add',
 				});
@@ -264,7 +263,6 @@ describe('decodeRpcMessage', () => {
 			if (!result.ok) {
 				expect(result.error.reason).toContain('both');
 				expect(result.error.correlation).toEqual({
-					kind: 'response',
 					id: 'req-1',
 					procedure: 'add',
 				});
@@ -272,15 +270,39 @@ describe('decodeRpcMessage', () => {
 		});
 
 		it('rejects error-only fields on success responses', () => {
-			expect(
-				decodeRpcMessage({
-					__rpc: true,
+			const result = decodeRpcMessage({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				response: { result: 3 },
+				code: 'UNEXPECTED',
+			});
+
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error.correlation).toEqual({
 					id: 'req-1',
 					procedure: 'add',
-					response: { result: 3 },
-					code: 'UNEXPECTED',
-				}).ok,
-			).toBe(false);
+				});
+			}
+		});
+
+		it('correlates code-only responses as malformed responses', () => {
+			const result = decodeRpcMessage({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				code: 'MISSING_ERROR',
+			});
+
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error.reason).toContain('neither');
+				expect(result.error.correlation).toEqual({
+					id: 'req-1',
+					procedure: 'add',
+				});
+			}
 		});
 
 		it('rejects neither response nor error present', () => {
@@ -447,7 +469,11 @@ describe('decodeRpcMessage', () => {
 				payload: {},
 			};
 
-			expect(decodeRpcMessage(message).ok).toBe(false);
+			const result = decodeRpcMessage(message);
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error.correlation).toEqual({ id: '1', procedure: 'add' });
+			}
 			expect(isValidRpcRequest(message)).toBe(false);
 			expect(isValidRpcNotification(message)).toBe(false);
 		});
@@ -461,7 +487,11 @@ describe('decodeRpcMessage', () => {
 				response: {},
 			};
 
-			expect(decodeRpcMessage(message).ok).toBe(false);
+			const result = decodeRpcMessage(message);
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error.correlation).toEqual({ id: '1', procedure: 'add' });
+			}
 			expect(isValidRpcRequest(message)).toBe(false);
 			expect(isValidRpcResponse(message)).toBe(false);
 		});

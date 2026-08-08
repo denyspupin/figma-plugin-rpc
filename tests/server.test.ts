@@ -275,6 +275,33 @@ describe('RpcServer', () => {
 			expect(response.error).toContain('unsupported protocol version');
 		});
 
+		it.each([
+			['mixed request/response', { payload: { a: 1, b: 2 }, response: { result: 3 } }],
+			[
+				'conflicting RPC markers',
+				{
+					__rpcNotification: true,
+					notification: 'progress',
+					payload: { a: 1, b: 2 },
+				},
+			],
+		])('returns a protocol error for a correlated %s', async (_name, malformedFields) => {
+			transport.deliver({
+				__rpc: true,
+				id: 'req-malformed',
+				procedure: 'add',
+				...malformedFields,
+			});
+
+			await vi.waitFor(() => {
+				expect(transport.getSentCount()).toBe(1);
+			});
+			const response = transport.getLastSent() as Record<string, unknown>;
+			expect(response.id).toBe('req-malformed');
+			expect(response.procedure).toBe('add');
+			expect(response.error).toContain('Protocol error');
+		});
+
 		it('returns unknown procedure error for "toString" when not registered', async () => {
 			transport.deliver({
 				__rpc: true,
