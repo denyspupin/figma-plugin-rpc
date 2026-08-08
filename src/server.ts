@@ -91,7 +91,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 		if (!decoded.ok) {
 			const correlation = decoded.error.correlation;
-			if (correlation?.kind === 'request' && correlation.procedure) {
+			if (correlation?.procedure) {
 				this.safeSendError(
 					correlation.id,
 					correlation.procedure,

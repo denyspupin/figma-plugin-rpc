@@ -88,6 +88,28 @@ describe('RpcClient', () => {
 		expect(client.getPendingCount()).toBe(0);
 	});
 
+	it.each([
+		['code-only response', { code: 'MISSING_ERROR' }],
+		['mixed request/response', { payload: undefined, response: { data: 'ok' } }],
+		[
+			'conflicting RPC markers',
+			{ __rpcNotification: true, notification: 'progress', response: { data: 'ok' } },
+		],
+	])('rejects a correlated malformed %s immediately', async (_name, malformedFields) => {
+		const promise = client.call('get-data');
+		const sent = transport.getLastSent() as { id: string };
+
+		transport.deliver({
+			__rpc: true,
+			id: sent.id,
+			procedure: 'get-data',
+			...malformedFields,
+		});
+
+		await expect(promise).rejects.toThrow('Protocol error');
+		expect(client.getPendingCount()).toBe(0);
+	});
+
 	it('ignores responses for unknown ids', () => {
 		client.call('add', { a: 1, b: 2 }).catch(() => {});
 		expect(client.getPendingCount()).toBe(1);

@@ -186,7 +186,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 		if (!decoded.ok) {
 			const correlation = decoded.error.correlation;
-			if (correlation?.kind === 'response') {
+			if (correlation) {
 				const call = this.pending.get(correlation.id);
 				if (call) {
 					call.reject(
