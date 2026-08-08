@@ -3,7 +3,9 @@ import {
 	createRpcServer,
 	type RpcNotification,
 	type RpcNotificationSchema,
+	type ProcedureConstraint,
 	type RpcProcedure,
+	type RpcProcedureError,
 	type RpcProcedureSchema,
 	type RpcRequest,
 	type RpcResponse,
@@ -117,3 +119,50 @@ interface BadProcedure extends RpcProcedureSchema {
 
 // @ts-expect-error - missing 'response' in procedure definition
 createRpcClient<BadProcedure, TestNotifications>(transport);
+
+// === Notification schemas must be objects ===
+// @ts-expect-error - primitive notification schemas are invalid
+createRpcClient<TestProcedures, string>(transport);
+// @ts-expect-error - primitive notification schemas are invalid
+createRpcServer<TestProcedures, number>(transport);
+
+// === Optional declared error metadata remains extractable ===
+interface ErrorProcedures extends RpcProcedureSchema {
+	optionalError: {
+		request: void;
+		response: void;
+		error?: { code: 'OPTIONAL'; detail: string };
+	};
+	requiredError: {
+		request: void;
+		response: void;
+		error: { code: 'REQUIRED' };
+	};
+	noError: {
+		request: void;
+		response: void;
+	};
+}
+
+type OptionalError = RpcProcedureError<ErrorProcedures, 'optionalError'>;
+const _optionalError: OptionalError = { code: 'OPTIONAL', detail: 'details' };
+void _optionalError;
+
+type RequiredError = RpcProcedureError<ErrorProcedures, 'requiredError'>;
+const _requiredError: RequiredError = { code: 'REQUIRED' };
+void _requiredError;
+
+type NoError = RpcProcedureError<ErrorProcedures, 'noError'>;
+// @ts-expect-error - procedures without error metadata extract to never
+const _noError: NoError = { code: 'NONE' };
+void _noError;
+
+// === Generic wrappers use the self-mapped procedure constraint ===
+function createGenericClient<
+	Procedures extends ProcedureConstraint<Procedures>,
+	Notifications extends object,
+>(genericTransport: RpcTransport) {
+	return createRpcClient<Procedures, Notifications>(genericTransport);
+}
+
+void createGenericClient<TestProcedures, TestNotifications>;

@@ -14,10 +14,13 @@ export type {
 	RpcNotificationMessage,
 } from './types';
 
-export { isRpcRequest, isRpcResponse, isRpcNotification, PROTOCOL_VERSION } from './types';
+export { PROTOCOL_VERSION } from './types';
 
 export {
 	decodeRpcMessage,
+	isRpcRequest,
+	isRpcResponse,
+	isRpcNotification,
 	isValidRpcRequest,
 	isValidRpcResponse,
 	isValidRpcNotification,
