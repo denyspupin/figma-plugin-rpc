@@ -972,9 +972,9 @@ describe('RpcServer', () => {
 			const [freshTransport] = TestTransport.createPair();
 			const timing: RpcMiddleware = async (ctx) => {
 				const before = Date.now();
-				await new Promise((r) => setTimeout(r, 5));
+				await new Promise((r) => setTimeout(r, 10));
 				const result = await ctx.next();
-				await new Promise((r) => setTimeout(r, 5));
+				await new Promise((r) => setTimeout(r, 10));
 				const after = Date.now();
 				timings[ctx.procedure] = { before, after, duration: after - before };
 				return result;
@@ -984,7 +984,7 @@ describe('RpcServer', () => {
 				middleware: [timing],
 			});
 			s.registerHandler('add', async ({ a, b }) => {
-				await new Promise((r) => setTimeout(r, 10));
+				await new Promise((r) => setTimeout(r, 15));
 				return { result: a + b };
 			});
 			s.start();
@@ -1001,7 +1001,7 @@ describe('RpcServer', () => {
 			});
 
 			expect(timings['add']).toBeDefined();
-			expect(timings['add'].duration).toBeGreaterThanOrEqual(20);
+			expect(timings['add'].duration).toBeGreaterThanOrEqual(30);
 			const response = freshTransport.getLastSent() as Record<string, unknown>;
 			expect(response.response).toEqual({ result: 3 });
 
