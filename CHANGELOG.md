@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.1.0...v1.2.0) (2026-08-14)
+
+
+### Features
+
+* **server:** add composable middleware support ([#32](https://github.com/denyspupin/figma-plugin-rpc/issues/32)) ([7b909a6](https://github.com/denyspupin/figma-plugin-rpc/commit/7b909a643f5f22e1f4c9aa251677654906814b2c))
+
 ## [1.1.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.0.0...v1.1.0) (2026-08-08)
 
 
