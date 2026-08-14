@@ -19,6 +19,7 @@ Type-safe RPC between Figma's main thread and UI iframe. Define procedures once,
 - [Compile-time safety](#compile-time-safety)
 - [Protocol versioning](#protocol-versioning)
 - [Custom transports](#custom-transports)
+- [Middleware](#middleware)
 - [License](#license)
 
 ## Why?
@@ -257,9 +258,6 @@ const rpc = createRpcServer<Procedures, Notifications>(new FigmaMainTransport(),
 	onError: (procedure, error) => {
 		console.error(`Error in ${procedure}:`, error);
 	},
-	validator: (procedure, payload) => {
-		// Return RpcError to reject, void to pass
-	},
 });
 
 rpc.start();
@@ -272,15 +270,16 @@ rpc.start();
 | `start()`                             | Start listening for incoming procedure calls.                    |
 | `stop()`                              | Stop listening.                                                  |
 | `registerHandler(procedure, handler)` | Register a handler for a procedure. Returns `this` for chaining. |
+| `use(middleware)`                     | Register middleware. Returns `this` for chaining.                |
 | `notify(notification, payload)`       | Send a notification to the client.                               |
 
 **Config options:**
 
-| Option      | Type                         | Default      | Description                                   |
-| ----------- | ---------------------------- | ------------ | --------------------------------------------- |
-| `logger`    | `Logger`                     | `noopLogger` | Custom logger implementing `Logger` interface |
-| `onError`   | `(procedure, error) => void` | —            | Callback for unhandled errors in handlers     |
-| `validator` | `RpcValidator`               | —            | Runtime validation function                   |
+| Option       | Type                               | Default      | Description                                         |
+| ------------ | ---------------------------------- | ------------ | --------------------------------------------------- |
+| `logger`     | `Logger`                           | `noopLogger` | Custom logger implementing `Logger` interface       |
+| `onError`    | `(procedure, error) => void`       | —            | Callback for unhandled errors in handlers           |
+| `middleware` | `RpcMiddleware \| RpcMiddleware[]` | —            | Middleware function(s) executed around each handler |
 
 ### `RpcError`
 
@@ -507,13 +506,14 @@ function SearchInput() {
 
 ### Runtime validation
 
-Validate payloads before handlers execute. Works with any validation library.
+Validate payloads before handlers execute. Use middleware to intercept calls. Works with any validation library.
 
 #### With Zod
 
 ```ts
 import { z } from 'zod';
 import { RpcError } from 'figma-plugin-rpc';
+import type { RpcMiddleware } from 'figma-plugin-rpc';
 
 const validators = {
 	'create-rectangle': z.object({
@@ -530,20 +530,23 @@ const validators = {
 	}),
 };
 
-const rpc = createRpcServer<Procedures, Notifications>(transport, {
-	validator: (procedure, payload) => {
-		const schema = validators[procedure];
-		if (!schema) return; // No validator for this procedure
-
-		const result = schema.safeParse(payload);
+const validation: RpcMiddleware = async (ctx, next) => {
+	const schema = validators[ctx.procedure as keyof typeof validators];
+	if (schema) {
+		const result = schema.safeParse(ctx.payload);
 		if (!result.success) {
-			return new RpcError(
+			throw new RpcError(
 				'VALIDATION_ERROR',
 				result.error.issues.map((i) => i.message).join(', '),
 				{ issues: result.error.issues },
 			);
 		}
-	},
+	}
+	return next();
+};
+
+const rpc = createRpcServer<Procedures, Notifications>(transport, {
+	middleware: [validation],
 });
 ```
 
@@ -611,6 +614,108 @@ const rpc = createRpcServer<Procedures, Notifications>(transport, {
 		error: (...args) => sentry.captureException(...args),
 	},
 });
+```
+
+### Middleware
+
+Middleware lets you wrap handlers with reusable cross-cutting logic — validation, permissions, rate limiting, timing, error normalization. Each middleware receives a context with `id`, `procedure`, `payload`, and `next()`. Calling `next()` invokes the rest of the chain; its return value is the handler's response.
+
+```ts
+import type { RpcMiddleware } from 'figma-plugin-rpc';
+```
+
+**Signature:**
+
+```ts
+interface RpcMiddlewareContext {
+	id: string;
+	procedure: string;
+	payload: unknown;
+	next: () => Promise<unknown>;
+}
+
+type RpcMiddleware = (ctx: RpcMiddlewareContext) => Promise<unknown>;
+```
+
+**Registration** — via config or `.use()` (or both):
+
+```ts
+const rpc = createRpcServer<Procedures, Notifications>(transport, {
+	middleware: [timingMw, permissionsMw],
+});
+
+rpc.use(rateLimitMw);
+```
+
+**Execution order:** first-registered is outermost. Config middleware runs before `.use()` middleware. All middleware run for every procedure; scope inside the middleware by checking `ctx.procedure`.
+
+```
+Request → mw1 → mw2 → handler → mw2 → mw1 → Response
+```
+
+**Examples:**
+
+#### Permissions / read-only guard
+
+Short-circuit mutating procedures when the plugin is in read-only mode:
+
+```ts
+const readOnlyGuard: RpcMiddleware = async (ctx, next) => {
+	if (ctx.procedure === 'delete-layer' && isReadOnly) {
+		throw new RpcError('READ_ONLY', 'Plugin is in read-only mode');
+	}
+	return next();
+};
+```
+
+#### Rate limiting
+
+Throttle expensive Figma operations:
+
+```ts
+const callCount: Record<string, number[]> = {};
+const rateLimit: RpcMiddleware = async (ctx, next) => {
+	const now = Date.now();
+	const window = callCount[ctx.procedure] ?? [];
+	callCount[ctx.procedure] = window.filter((t) => now - t < 1000);
+
+	if (callCount[ctx.procedure].length >= 50) {
+		throw new RpcError('RATE_LIMITED', `Too many calls to "${ctx.procedure}"`);
+	}
+	callCount[ctx.procedure].push(now);
+	return next();
+};
+```
+
+#### Timing / metrics
+
+Wrap `next()` in try/finally to measure the full chain:
+
+```ts
+const timing: RpcMiddleware = async (ctx, next) => {
+	const start = Date.now();
+	try {
+		return await next();
+	} finally {
+		const duration = Date.now() - start;
+		if (duration > 500) telemetry.slowCall(ctx.procedure, duration);
+	}
+};
+```
+
+#### Error normalization
+
+Map handler errors to stable client-facing codes:
+
+```ts
+const normalizeErrors: RpcMiddleware = async (ctx, next) => {
+	try {
+		return await next();
+	} catch (error) {
+		if (error instanceof RpcError) throw error;
+		throw new RpcError('INTERNAL', 'An unexpected error occurred');
+	}
+};
 ```
 
 ### Compile-time safety

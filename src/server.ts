@@ -18,12 +18,19 @@ type RpcHandler<Schema extends ProcedureConstraint<Schema>, T extends RpcProcedu
 	payload: RpcRequest<Schema, T>,
 ) => RpcResponse<Schema, T> | Promise<RpcResponse<Schema, T>>;
 
-export type RpcValidator = (procedure: string, payload: unknown) => void | RpcError;
+export interface RpcMiddlewareContext {
+	id: string;
+	procedure: string;
+	payload: unknown;
+	next: () => Promise<unknown>;
+}
+
+export type RpcMiddleware = (ctx: RpcMiddlewareContext) => Promise<unknown>;
 
 export interface RpcServerConfig {
 	logger: Logger;
 	onError?: (procedure: string, error: Error) => void;
-	validator?: RpcValidator;
+	middleware?: RpcMiddleware | RpcMiddleware[];
 }
 
 const DEFAULT_CONFIG: RpcServerConfig = {
@@ -33,6 +40,7 @@ const DEFAULT_CONFIG: RpcServerConfig = {
 class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notifications extends object> {
 	private handlers = new Map<string, RpcHandler<Procedures, RpcProcedure<Procedures>>>();
 	private config: RpcServerConfig;
+	private middleware: RpcMiddleware[] = [];
 	private unsubscribeTransport: (() => void) | null = null;
 	private running = false;
 
@@ -41,6 +49,10 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		config: Partial<RpcServerConfig> = {},
 	) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
+		const mw = config.middleware;
+		if (mw) {
+			this.middleware = Array.isArray(mw) ? mw : [mw];
+		}
 	}
 
 	start(): void {
@@ -68,6 +80,11 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.unsubscribeTransport?.();
 		this.unsubscribeTransport = null;
 		this.running = false;
+	}
+
+	use(middleware: RpcMiddleware): this {
+		this.middleware.push(middleware);
+		return this;
 	}
 
 	registerHandler<T extends RpcProcedure<Procedures>>(
@@ -131,32 +148,19 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 			return;
 		}
 
-		if (this.config.validator) {
-			let validationError: void | RpcError;
-			try {
-				validationError = this.config.validator(procedure, payload);
-			} catch (error) {
-				const err = error instanceof Error ? error : new Error(String(error));
-				this.safeSendError(id, procedure, err.message);
-				this.safeLog('error', `[RpcServer] Validator threw in "${procedure}":`, error);
-				this.safeOnError(procedure, err);
-				return;
-			}
-
-			if (validationError) {
-				this.safeSendError(id, procedure, validationError.message, validationError);
-				this.safeLog(
-					'error',
-					`[RpcServer] Validation error in "${procedure}": ${validationError.message}`,
-				);
-				return;
-			}
-		}
-
 		try {
-			const response = await Promise.resolve(
-				handler(payload as RpcRequest<Procedures, RpcProcedure<Procedures>>),
+			const ctx = { id, procedure, payload };
+			const chain: () => Promise<unknown> = this.middleware.reduceRight<
+				() => Promise<unknown>
+			>(
+				(next, mw) => () => Promise.resolve(mw({ ...ctx, next })),
+				() =>
+					Promise.resolve(
+						handler(payload as RpcRequest<Procedures, RpcProcedure<Procedures>>),
+					),
 			);
+
+			const response = await chain();
 
 			this.safeLog(
 				'debug',
