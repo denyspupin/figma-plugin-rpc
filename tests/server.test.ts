@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RpcError, RpcServer, type RpcNotificationSchema, type RpcProcedureSchema } from '../src';
+import {
+	RpcError,
+	RpcServer,
+	type RpcMiddleware,
+	type RpcNotificationSchema,
+	type RpcProcedureSchema,
+} from '../src';
 import { TestTransport } from './test-utils';
 
 interface TestProcedures extends RpcProcedureSchema {
@@ -368,38 +374,6 @@ describe('RpcServer', () => {
 	});
 
 	describe('Error containment', () => {
-		it('thrown validator invokes onError exactly once', async () => {
-			const onError = vi.fn();
-			const [freshTransport] = TestTransport.createPair();
-			const validator = vi.fn(() => {
-				throw new Error('validator exploded');
-			});
-			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
-				validator,
-				onError,
-			});
-			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
-			s.start();
-
-			freshTransport.deliver({
-				__rpc: true,
-				id: 'req-1',
-				procedure: 'add',
-				payload: { a: 1, b: 2 },
-			});
-
-			await vi.waitFor(() => {
-				expect(freshTransport.getSentCount()).toBe(1);
-			});
-
-			expect(onError).toHaveBeenCalledTimes(1);
-			expect(onError).toHaveBeenCalledWith('add', expect.any(Error));
-			const response = freshTransport.getLastSent() as Record<string, unknown>;
-			expect(response.error).toBe('validator exploded');
-
-			s.stop();
-		});
-
 		it('handler failure is correctly serialized', async () => {
 			server.registerHandler('fail', async () => {
 				throw new RpcError('BOOM', 'async boom', { detail: 42 });
@@ -587,15 +561,31 @@ describe('RpcServer', () => {
 		});
 	});
 
-	describe('Validator', () => {
-		it('calls validator before handler and proceeds when valid', async () => {
+	describe('Middleware', () => {
+		it('executes middleware in correct order (first registered = outermost)', async () => {
+			const order: string[] = [];
 			const [freshTransport] = TestTransport.createPair();
-			const validator = vi.fn(() => undefined);
-			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
-				validator,
+			const mw1: RpcMiddleware = async (ctx) => {
+				order.push('mw1-before');
+				const result = await ctx.next();
+				order.push('mw1-after');
+				return result;
+			};
+			const mw2: RpcMiddleware = async (ctx) => {
+				order.push('mw2-before');
+				const result = await ctx.next();
+				order.push('mw2-after');
+				return result;
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [mw1, mw2],
 			});
-			validServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
-			validServer.start();
+			s.registerHandler('add', ({ a, b }) => {
+				order.push('handler');
+				return { result: a + b };
+			});
+			s.start();
 
 			freshTransport.deliver({
 				__rpc: true,
@@ -608,53 +598,31 @@ describe('RpcServer', () => {
 				expect(freshTransport.getSentCount()).toBe(1);
 			});
 
-			expect(validator).toHaveBeenCalledWith('add', { a: 1, b: 2 });
+			expect(order).toEqual([
+				'mw1-before',
+				'mw2-before',
+				'handler',
+				'mw2-after',
+				'mw1-after',
+			]);
 			const response = freshTransport.getLastSent() as Record<string, unknown>;
 			expect(response.response).toEqual({ result: 3 });
 
-			validServer.stop();
+			s.stop();
 		});
 
-		it('rejects with RpcError when validator returns error', async () => {
+		it('short-circuits when middleware returns without calling next', async () => {
+			const handler = vi.fn(() => ({ result: 99 }));
 			const [freshTransport] = TestTransport.createPair();
-			const validator = vi.fn(
-				() => new RpcError('VALIDATION', 'Invalid payload', { field: 'a' }),
-			);
-			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
-				validator,
+			const shortCircuit: RpcMiddleware = async () => {
+				return { result: 0, cached: true };
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [shortCircuit],
 			});
-			validServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
-			validServer.start();
-
-			freshTransport.deliver({
-				__rpc: true,
-				id: 'req-1',
-				procedure: 'add',
-				payload: { a: 'not a number', b: 2 },
-			});
-
-			await vi.waitFor(() => {
-				expect(freshTransport.getSentCount()).toBe(1);
-			});
-
-			expect(validator).toHaveBeenCalledWith('add', { a: 'not a number', b: 2 });
-			const response = freshTransport.getLastSent() as Record<string, unknown>;
-			expect(response.error).toBe('Invalid payload');
-			expect(response.code).toBe('VALIDATION');
-			expect(response.data).toEqual({ field: 'a' });
-
-			validServer.stop();
-		});
-
-		it('does not call handler when validation fails', async () => {
-			const [freshTransport] = TestTransport.createPair();
-			const handler = vi.fn(() => ({ result: 0 }));
-			const validator = vi.fn(() => new RpcError('VALIDATION', 'Invalid'));
-			const validServer = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
-				validator,
-			});
-			validServer.registerHandler('add', handler);
-			validServer.start();
+			s.registerHandler('add', handler);
+			s.start();
 
 			freshTransport.deliver({
 				__rpc: true,
@@ -668,17 +636,153 @@ describe('RpcServer', () => {
 			});
 
 			expect(handler).not.toHaveBeenCalled();
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 0, cached: true });
 
-			validServer.stop();
+			s.stop();
 		});
 
-		it('works without validator (no validation)', async () => {
+		it('short-circuits with RpcError when middleware throws RpcError', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const noValidatorServer = new RpcServer<TestProcedures, TestNotifications>(
-				freshTransport,
-			);
-			noValidatorServer.registerHandler('add', ({ a, b }) => ({ result: a + b }));
-			noValidatorServer.start();
+			const rateLimit: RpcMiddleware = async () => {
+				throw new RpcError('RATE_LIMITED', 'Too many requests', { retryAfter: 5 });
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [rateLimit],
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Too many requests');
+			expect(response.code).toBe('RATE_LIMITED');
+			expect(response.data).toEqual({ retryAfter: 5 });
+
+			s.stop();
+		});
+
+		it('sends error when middleware throws plain Error', async () => {
+			const onError = vi.fn();
+			const [freshTransport] = TestTransport.createPair();
+			const failing: RpcMiddleware = async () => {
+				throw new Error('Middleware exploded');
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [failing],
+				onError,
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(onError).toHaveBeenCalledWith('add', expect.any(Error));
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Middleware exploded');
+			expect(response.code).toBeUndefined();
+
+			s.stop();
+		});
+
+		it('transforms response via middleware', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const transform: RpcMiddleware = async (ctx) => {
+				const result = (await ctx.next()) as { result: number };
+				return { ...result, enriched: true };
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [transform],
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3, enriched: true });
+
+			s.stop();
+		});
+
+		it('supports config array + .use() mix (config runs before .use())', async () => {
+			const order: string[] = [];
+			const [freshTransport] = TestTransport.createPair();
+			const configMw: RpcMiddleware = async (ctx) => {
+				order.push('config');
+				return ctx.next();
+			};
+			const useMw: RpcMiddleware = async (ctx) => {
+				order.push('use');
+				return ctx.next();
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [configMw],
+			});
+			s.use(useMw);
+			s.registerHandler('add', ({ a, b }) => {
+				order.push('handler');
+				return { result: a + b };
+			});
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(order).toEqual(['config', 'use', 'handler']);
+
+			s.stop();
+		});
+
+		it('works with sync (non-promise) middleware', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const syncMw: RpcMiddleware = (ctx) => ctx.next();
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [syncMw],
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
 
 			freshTransport.deliver({
 				__rpc: true,
@@ -694,7 +798,239 @@ describe('RpcServer', () => {
 			const response = freshTransport.getLastSent() as Record<string, unknown>;
 			expect(response.response).toEqual({ result: 3 });
 
-			noValidatorServer.stop();
+			s.stop();
+		});
+
+		it('validation middleware: rejects invalid payload with RpcError', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const validator: RpcMiddleware = async (ctx) => {
+				if (ctx.procedure === 'add') {
+					const payload = ctx.payload as { a: unknown; b: unknown };
+					if (typeof payload.a !== 'number' || typeof payload.b !== 'number') {
+						throw new RpcError('VALIDATION', 'a and b must be numbers', {
+							field: 'payload',
+						});
+					}
+				}
+				return ctx.next();
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [validator],
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 'not a number', b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('a and b must be numbers');
+			expect(response.code).toBe('VALIDATION');
+			expect(response.data).toEqual({ field: 'payload' });
+
+			s.stop();
+		});
+
+		it('.use() after start() affects subsequent requests', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport);
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const firstResponse = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(firstResponse.response).toEqual({ result: 3 });
+
+			const mw: RpcMiddleware = async (ctx) => {
+				const result = (await ctx.next()) as { result: number };
+				return { result: result.result * 10 };
+			};
+			s.use(mw);
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-2',
+				procedure: 'add',
+				payload: { a: 2, b: 3 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(2);
+			});
+
+			const secondResponse = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(secondResponse.response).toEqual({ result: 50 });
+
+			s.stop();
+		});
+
+		it('error normalization: middleware catches handler error and transforms it', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const normalize: RpcMiddleware = async (ctx) => {
+				try {
+					return await ctx.next();
+				} catch {
+					throw new RpcError('INTERNAL', 'Something went wrong', { sanitized: true });
+				}
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [normalize],
+			});
+			s.registerHandler('fail', () => {
+				throw new Error('sensitive internal error message');
+			});
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'fail',
+				payload: undefined,
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.error).toBe('Something went wrong');
+			expect(response.code).toBe('INTERNAL');
+			expect(response.data).toEqual({ sanitized: true });
+
+			s.stop();
+		});
+
+		it('short-circuit stops the chain (inner middleware never runs)', async () => {
+			const order: string[] = [];
+			const [freshTransport] = TestTransport.createPair();
+			const mw1: RpcMiddleware = async (ctx) => {
+				order.push('mw1-before');
+				const result = await ctx.next();
+				order.push('mw1-after');
+				return result;
+			};
+			const mw2: RpcMiddleware = async () => {
+				order.push('mw2-before');
+				return { result: -1, intercepted: true };
+			};
+			const mw3: RpcMiddleware = async (ctx) => {
+				order.push('mw3-before');
+				const result = await ctx.next();
+				order.push('mw3-after');
+				return result;
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [mw1, mw2, mw3],
+			});
+			s.registerHandler('add', ({ a, b }) => {
+				order.push('handler');
+				return { result: a + b };
+			});
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(order).toEqual(['mw1-before', 'mw2-before', 'mw1-after']);
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: -1, intercepted: true });
+
+			s.stop();
+		});
+
+		it('middleware does async work before and after next() (timing pattern)', async () => {
+			const timings: Record<string, { before: number; after: number; duration: number }> = {};
+			const [freshTransport] = TestTransport.createPair();
+			const timing: RpcMiddleware = async (ctx) => {
+				const before = Date.now();
+				await new Promise((r) => setTimeout(r, 5));
+				const result = await ctx.next();
+				await new Promise((r) => setTimeout(r, 5));
+				const after = Date.now();
+				timings[ctx.procedure] = { before, after, duration: after - before };
+				return result;
+			};
+
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [timing],
+			});
+			s.registerHandler('add', async ({ a, b }) => {
+				await new Promise((r) => setTimeout(r, 10));
+				return { result: a + b };
+			});
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			expect(timings['add']).toBeDefined();
+			expect(timings['add'].duration).toBeGreaterThanOrEqual(20);
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3 });
+
+			s.stop();
+		});
+
+		it('empty middleware array works (regression)', async () => {
+			const [freshTransport] = TestTransport.createPair();
+			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
+				middleware: [],
+			});
+			s.registerHandler('add', ({ a, b }) => ({ result: a + b }));
+			s.start();
+
+			freshTransport.deliver({
+				__rpc: true,
+				id: 'req-1',
+				procedure: 'add',
+				payload: { a: 1, b: 2 },
+			});
+
+			await vi.waitFor(() => {
+				expect(freshTransport.getSentCount()).toBe(1);
+			});
+
+			const response = freshTransport.getLastSent() as Record<string, unknown>;
+			expect(response.response).toEqual({ result: 3 });
+
+			s.stop();
 		});
 	});
 });
