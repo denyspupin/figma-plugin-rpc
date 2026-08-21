@@ -12,7 +12,6 @@ import { decodeRpcMessage, type DecodedRpcResponse } from './protocol';
 import { formatDuration, noopLogger, type Logger } from './transport';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
-import { PendingCall } from './pending-call';
 
 type NotificationHandler<Schema extends object, T extends RpcNotification<Schema>> = (
 	payload: RpcNotificationPayload<Schema, T>,
@@ -28,8 +27,16 @@ const DEFAULT_CONFIG: RpcClientConfig = {
 	logger: noopLogger,
 };
 
+interface PendingEntry {
+	procedure: string;
+	startTime: number;
+	resolve: (value: unknown) => void;
+	reject: (error: Error) => void;
+	settle: () => void;
+}
+
 class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notifications extends object> {
-	private pending = new Map<string, PendingCall>();
+	private pending = new Map<string, PendingEntry>();
 	private notificationHandlers = new Map<string, Set<(payload: unknown) => void>>();
 	private initialized = false;
 	private unsubscribeTransport: (() => void) | null = null;
@@ -49,7 +56,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 		this.unsubscribeTransport = this.transport.onMessage((msg) => this.onMessage(msg));
 		this.initialized = true;
-		this.safeLog('log', '[RpcClient] Initialized');
+		this.config.logger.log('[RpcClient] Initialized');
 	}
 
 	destroy(): void {
@@ -58,7 +65,8 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 		this.unsubscribeTransport = null;
 
-		for (const [, call] of this.pending) {
+		for (const call of this.pending.values()) {
+			call.settle();
 			call.reject(new Error(`RPC client destroyed while "${call.procedure}" was pending`));
 		}
 
@@ -85,7 +93,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		const timeout = options?.timeout ?? this.config.defaultTimeout;
 		const startTime = Date.now();
 
-		this.safeLog('debug', `[RpcClient] "${procedure}"`);
+		this.config.logger.debug(`[RpcClient] "${procedure}"`);
 
 		return new Promise<RpcResponse<Procedures, T>>((resolve, reject) => {
 			const signal = options?.signal;
@@ -97,13 +105,22 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 				return;
 			}
 
+			let settled = false;
 			let cleanupAbort: (() => void) | undefined;
 
+			const settle = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeoutId);
+				cleanupAbort?.();
+				this.pending.delete(id);
+			};
+
 			const timeoutId = setTimeout(() => {
-				const call = this.pending.get(id);
-				if (call) {
-					const elapsed = Date.now() - call.startTime;
-					call.reject(
+				if (!settled) {
+					settle();
+					const elapsed = Date.now() - startTime;
+					reject(
 						new Error(
 							`RPC call "${procedure}" timed out after ${formatDuration(elapsed)} (limit: ${formatDuration(timeout)})`,
 						),
@@ -111,13 +128,13 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 				}
 			}, timeout);
 
-			if (signal && typeof signal.addEventListener === 'function') {
+			if (signal) {
 				const abortHandler = () => {
-					const call = this.pending.get(id);
-					if (call) {
+					if (!settled) {
+						settle();
 						const error = new Error(`RPC call "${procedure}" was aborted`);
 						error.name = 'AbortError';
-						call.reject(error);
+						reject(error);
 					}
 				};
 
@@ -128,20 +145,14 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 				};
 			}
 
-			const call = new PendingCall({
-				id,
+			const entry: PendingEntry = {
 				procedure,
 				startTime,
 				resolve: resolve as (value: unknown) => void,
 				reject,
-				timeoutId,
-				cleanupAbort,
-				onSettle: (settledId) => {
-					this.pending.delete(settledId);
-				},
-			});
-
-			this.pending.set(id, call);
+				settle,
+			};
+			this.pending.set(id, entry);
 
 			const message: RpcRequestMessage<Procedures, T> = {
 				__rpc: true,
@@ -154,7 +165,8 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 			try {
 				this.transport.send(message);
 			} catch (error) {
-				call.reject(error instanceof Error ? error : new Error(String(error)));
+				settle();
+				reject(error instanceof Error ? error : new Error(String(error)));
 			}
 		});
 	}
@@ -188,6 +200,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 			if (correlation) {
 				const call = this.pending.get(correlation.id);
 				if (call) {
+					call.settle();
 					call.reject(
 						new Error(
 							`Protocol error for "${call.procedure}": ${decoded.error.reason}`,
@@ -196,8 +209,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 				}
 			}
 
-			this.safeLog(
-				'debug',
+			this.config.logger.debug(
 				`[RpcClient] Ignoring malformed message: ${decoded.error.reason}`,
 			);
 			return;
@@ -225,6 +237,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		if (call.procedure !== procedure) {
+			call.settle();
 			call.reject(
 				new Error(
 					`Protocol error: response procedure "${procedure}" does not match pending "${call.procedure}" for id "${id}"`,
@@ -233,20 +246,21 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 			return;
 		}
 
-		const duration = call.duration();
+		const duration = Date.now() - call.startTime;
 
 		if (!decoded.success) {
 			const error = decoded.error ?? 'Unknown error';
+			call.settle();
 			if (decoded.code) {
 				call.reject(new RpcError(decoded.code, error, decoded.data));
 			} else {
 				call.reject(new Error(error));
 			}
-			this.safeLog('error', `[RpcClient] Error in "${procedure}": ${error}`);
+			this.config.logger.error(`[RpcClient] Error in "${procedure}": ${error}`);
 		} else {
+			call.settle();
 			call.resolve(decoded.response);
-			this.safeLog(
-				'debug',
+			this.config.logger.debug(
 				`[RpcClient] "${procedure}" completed in ${formatDuration(duration)}`,
 			);
 		}
@@ -262,16 +276,11 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 			try {
 				handler(payload);
 			} catch (error) {
-				this.safeLog('error', `[RpcClient] Error in handler for "${notification}":`, error);
+				this.config.logger.error(
+					`[RpcClient] Error in handler for "${notification}":`,
+					error,
+				);
 			}
-		}
-	}
-
-	private safeLog(level: 'log' | 'debug' | 'warn' | 'error', ...args: unknown[]): void {
-		try {
-			this.config.logger[level](...args);
-		} catch {
-			// logging must not alter client lifecycle or settlement
 		}
 	}
 

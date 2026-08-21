@@ -29,6 +29,7 @@ export type RpcMiddleware = (ctx: RpcMiddlewareContext) => Promise<unknown>;
 
 export interface RpcServerConfig {
 	logger: Logger;
+	/** Must not throw; a throwing callback violates the server's error contract. */
 	onError?: (procedure: string, error: Error) => void;
 	middleware?: RpcMiddleware | RpcMiddleware[];
 }
@@ -61,17 +62,10 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		this.unsubscribeTransport = this.transport.onMessage((msg) => {
-			try {
-				const result = this.processMessage(msg);
-				if (result && typeof result.then === 'function') {
-					result.catch(() => {});
-				}
-			} catch {
-				// synchronous failure in processMessage is swallowed
-			}
+			void this.processMessage(msg);
 		});
 		this.running = true;
-		this.safeLog('log', '[RpcServer] Started');
+		this.config.logger.log('[RpcServer] Started');
 	}
 
 	stop(): void {
@@ -92,7 +86,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		handler: RpcHandler<Procedures, T>,
 	): this {
 		if (this.handlers.has(procedure)) {
-			this.safeLog('warn', `[RpcServer] Overwriting existing handler for "${procedure}"`);
+			this.config.logger.warn(`[RpcServer] Overwriting existing handler for "${procedure}"`);
 		}
 
 		this.handlers.set(
@@ -109,14 +103,13 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		if (!decoded.ok) {
 			const correlation = decoded.error.correlation;
 			if (correlation?.procedure) {
-				this.safeSendError(
+				this.sendError(
 					correlation.id,
 					correlation.procedure,
 					`Protocol error: ${decoded.error.reason}`,
 				);
 			}
-			this.safeLog(
-				'debug',
+			this.config.logger.debug(
 				`[RpcServer] Ignoring malformed message: ${decoded.error.reason}`,
 			);
 			return;
@@ -129,7 +122,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		const startTime = Date.now();
-		this.safeLog('debug', `[RpcServer] "${value.procedure}"`);
+		this.config.logger.debug(`[RpcServer] "${value.procedure}"`);
 
 		return this.executeHandler(value.id, value.procedure, value.payload, startTime);
 	}
@@ -143,8 +136,8 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		const handler = this.handlers.get(procedure);
 
 		if (!handler) {
-			this.safeSendError(id, procedure, `Unknown procedure: "${procedure}"`);
-			this.safeLog('error', `[RpcServer] Error: No handler for "${procedure}"`);
+			this.sendError(id, procedure, `Unknown procedure: "${procedure}"`);
+			this.config.logger.error(`[RpcServer] Error: No handler for "${procedure}"`);
 			return;
 		}
 
@@ -162,18 +155,20 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 			const response = await chain();
 
-			this.safeLog(
-				'debug',
+			this.config.logger.debug(
 				`[RpcServer] "${procedure}" completed in ${formatDuration(Date.now() - startTime)}`,
 			);
 
-			this.safeSendResponse(id, procedure, response);
+			this.sendResponse(id, procedure, response);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			const rpcError = error instanceof RpcError ? error : undefined;
-			this.safeSendError(id, procedure, errorMessage, rpcError);
-			this.safeLog('error', `[RpcServer] Error in "${procedure}":`, error);
-			this.safeOnError(procedure, error instanceof Error ? error : new Error(String(error)));
+			this.sendError(id, procedure, errorMessage, rpcError);
+			this.config.logger.error(`[RpcServer] Error in "${procedure}":`, error);
+			this.config.onError?.(
+				procedure,
+				error instanceof Error ? error : new Error(String(error)),
+			);
 		}
 	}
 
@@ -191,7 +186,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.transport.send(message);
 	}
 
-	private safeSendResponse(id: string, procedure: string, response: unknown): void {
+	private sendResponse(id: string, procedure: string, response: unknown): void {
 		try {
 			const message: RpcResponseMessage = {
 				__rpc: true,
@@ -206,7 +201,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 	}
 
-	private safeSendError(id: string, procedure: string, error: string, rpcError?: RpcError): void {
+	private sendError(id: string, procedure: string, error: string, rpcError?: RpcError): void {
 		try {
 			const message: RpcResponseMessage = {
 				__rpc: true,
@@ -224,25 +219,11 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 	private reportSendFailure(procedure: string, error: unknown): void {
 		const normalized = error instanceof Error ? error : new Error(String(error));
-		this.safeLog('error', `[RpcServer] Transport send failed for "${procedure}":`, normalized);
-		this.safeOnError(procedure, normalized);
-	}
-
-	private safeLog(level: 'log' | 'debug' | 'warn' | 'error', ...args: unknown[]): void {
-		try {
-			this.config.logger[level](...args);
-		} catch {
-			// logger failure must not create unhandled rejections
-		}
-	}
-
-	private safeOnError(procedure: string, error: Error): void {
-		if (!this.config.onError) return;
-		try {
-			this.config.onError(procedure, error);
-		} catch {
-			// onError callback failure must not create unhandled rejections
-		}
+		this.config.logger.error(
+			`[RpcServer] Transport send failed for "${procedure}":`,
+			normalized,
+		);
+		this.config.onError?.(procedure, normalized);
 	}
 }
 
