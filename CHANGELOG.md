@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.3.0...v2.0.0) (2026-08-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* RpcProcedureError removed; error members in procedure definitions are no longer part of the schema contract.
+* middleware context is typed per schema; scalar middleware config form removed; RpcServerConfig requires a type argument.
+* RpcClient.init() and RpcClient.destroy() removed; use start() and stop().
+* isValidRpcRequest/isValidRpcResponse/ isValidRpcNotification, RpcClient.isInitialized(), and the formatDuration export are removed.
+* PROTOCOL_VERSION export removed; DecodedRpc* results no longer expose version; messages with unsupported v values are no longer rejected.
+
+### Features
+
+* remove deprecated aliases and diagnostics surface ([f2f08e2](https://github.com/denyspupin/figma-plugin-rpc/commit/f2f08e237382f9ff759ccd5631f03400a2581d6c))
+* remove init/destroy lifecycle aliases ([6a143ca](https://github.com/denyspupin/figma-plugin-rpc/commit/6a143ca3c6cd9820c63dbd0a6bab07cf4dd1559d))
+* remove protocol version machinery ([9f6e4bf](https://github.com/denyspupin/figma-plugin-rpc/commit/9f6e4bf524b3d3727071090bf1dc37a7dc97bc37))
+* remove unenforceable error metadata types ([a87e11b](https://github.com/denyspupin/figma-plugin-rpc/commit/a87e11bbd873ffee0da942485d1318ae3c0e344b))
+* type middleware context as discriminated union ([9abbbe9](https://github.com/denyspupin/figma-plugin-rpc/commit/9abbbe94b49bdc6ff5710a411d24c12aecf575e8))
+
 ## [1.3.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.2.0...v1.3.0) (2026-08-21)
 
 
