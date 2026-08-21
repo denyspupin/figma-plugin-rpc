@@ -20,14 +20,14 @@ describe('RpcClient', () => {
 	beforeEach(() => {
 		[transport] = TestTransport.createPair();
 		client = new RpcClient<TestProcedures, TestNotifications>(transport);
-		client.init();
+		client.start();
 	});
 
 	afterEach(() => {
-		client.destroy();
+		client.stop();
 	});
 
-	it('throws if call is made before init', async () => {
+	it('throws if call is made before start', async () => {
 		const uninitClient = new RpcClient<TestProcedures, TestNotifications>(transport);
 		await expect(uninitClient.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
 	});
@@ -140,7 +140,7 @@ describe('RpcClient', () => {
 			const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
 				defaultTimeout: 100,
 			});
-			fastClient.init();
+			fastClient.start();
 
 			const promise = fastClient.call('slow');
 
@@ -148,7 +148,7 @@ describe('RpcClient', () => {
 
 			await expect(promise).rejects.toThrow(/timed out/);
 
-			fastClient.destroy();
+			fastClient.stop();
 		} finally {
 			vi.useRealTimers();
 		}
@@ -272,29 +272,17 @@ describe('RpcClient', () => {
 
 	it('stop rejects pending and clears listeners', async () => {
 		const promise = client.call('add', { a: 1, b: 2 });
-		client.destroy();
+		client.stop();
 
 		await expect(promise).rejects.toThrow(/stopped/);
 		expect(client.getPendingCount()).toBe(0);
 	});
 
-	it('start/stop are the primary lifecycle names', async () => {
-		const [freshTransport] = TestTransport.createPair();
-		const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport);
-		c.start();
-
-		const promise = c.call('add', { a: 1, b: 2 });
-		c.stop();
-
-		await expect(promise).rejects.toThrow(/stopped/);
-		await expect(c.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
-	});
-
-	it('init is idempotent', () => {
+	it('start is idempotent', () => {
 		const handler = vi.fn();
 		client.on('progress', handler);
-		client.init();
-		client.init();
+		client.start();
+		client.start();
 
 		transport.deliver({
 			__rpcNotification: true,
@@ -305,9 +293,9 @@ describe('RpcClient', () => {
 		expect(handler).toHaveBeenCalledTimes(1);
 	});
 
-	it('destroy is idempotent', async () => {
-		client.destroy();
-		client.destroy();
+	it('stop is idempotent', async () => {
+		client.stop();
+		client.stop();
 		await expect(client.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
 	});
 
@@ -321,12 +309,12 @@ describe('RpcClient', () => {
 		expect(client.getPendingCount()).toBe(2);
 	});
 
-	it('destroy clears notification handlers', () => {
+	it('stop clears notification handlers', () => {
 		const handler = vi.fn();
 		client.on('progress', handler);
 
-		client.destroy();
-		client.init();
+		client.stop();
+		client.start();
 
 		transport.deliver({
 			__rpcNotification: true,
@@ -451,7 +439,7 @@ describe('RpcClient', () => {
 				const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
 					defaultTimeout: 100,
 				});
-				fastClient.init();
+				fastClient.start();
 
 				const promise = fastClient.call('slow', undefined, { signal: controller.signal });
 
@@ -462,7 +450,7 @@ describe('RpcClient', () => {
 
 				controller.abort();
 
-				fastClient.destroy();
+				fastClient.stop();
 			} finally {
 				vi.useRealTimers();
 			}
@@ -624,13 +612,13 @@ describe('RpcClient', () => {
 			const c = new RpcClient<TestProcedures, TestNotifications>(
 				brokenTransport as unknown as TestTransport,
 			);
-			c.init();
+			c.start();
 
 			const promise = c.call('add', { a: 1, b: 2 });
 			await expect(promise).rejects.toThrow('transport broken');
 			expect(c.getPendingCount()).toBe(0);
 
-			c.destroy();
+			c.stop();
 		});
 
 		it('send failure clears the timer', async () => {
@@ -644,13 +632,13 @@ describe('RpcClient', () => {
 			const c = new RpcClient<TestProcedures, TestNotifications>(
 				brokenTransport as unknown as TestTransport,
 			);
-			c.init();
+			c.start();
 
 			await c.call('add', { a: 1, b: 2 }).catch(() => {});
 			expect(clearTimeoutSpy).toHaveBeenCalled();
 
 			clearTimeoutSpy.mockRestore();
-			c.destroy();
+			c.stop();
 		});
 
 		it('send failure cleans up abort listener', async () => {
@@ -663,7 +651,7 @@ describe('RpcClient', () => {
 			const c = new RpcClient<TestProcedures, TestNotifications>(
 				brokenTransport as unknown as TestTransport,
 			);
-			c.init();
+			c.start();
 
 			const ac = new AbortController();
 			const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
@@ -672,7 +660,7 @@ describe('RpcClient', () => {
 			expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
 
 			removeSpy.mockRestore();
-			c.destroy();
+			c.stop();
 		});
 	});
 
@@ -693,14 +681,14 @@ describe('RpcClient', () => {
 		});
 	});
 
-	it('destroy clears handlers registered before initialization', () => {
+	it('stop clears handlers registered before start', () => {
 		const [freshTransport] = TestTransport.createPair();
 		const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport);
 		const handler = vi.fn();
 		c.on('progress', handler);
 
-		c.destroy();
-		c.init();
+		c.stop();
+		c.start();
 		freshTransport.deliver({
 			__rpcNotification: true,
 			notification: 'progress',
@@ -708,6 +696,6 @@ describe('RpcClient', () => {
 		});
 
 		expect(handler).not.toHaveBeenCalled();
-		c.destroy();
+		c.stop();
 	});
 });

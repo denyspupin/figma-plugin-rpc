@@ -30,12 +30,12 @@ describe('E2E: RpcClient + RpcServer', () => {
 		[clientTransport, serverTransport] = TestTransport.createPair();
 		client = new RpcClient<TestProcedures, TestNotifications>(clientTransport);
 		server = new RpcServer<TestProcedures, TestNotifications>(serverTransport);
-		client.init();
+		client.start();
 		server.start();
 	});
 
 	afterEach(() => {
-		client.destroy();
+		client.stop();
 		server.stop();
 	});
 
@@ -144,13 +144,13 @@ describe('E2E: RpcClient + RpcServer', () => {
 		expect(r3).toEqual({ result: 11 });
 	});
 
-	it('cleans up properly on destroy', async () => {
+	it('cleans up properly on client stop', async () => {
 		server.registerHandler('add', ({ a, b }) => ({ result: a + b }));
 
 		const result = await client.call('add', { a: 1, b: 2 });
 		expect(result).toEqual({ result: 3 });
 
-		client.destroy();
+		client.stop();
 
 		await expect(client.call('add', { a: 3, b: 4 })).rejects.toThrow('not initialized');
 	});
