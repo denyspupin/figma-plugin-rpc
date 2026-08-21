@@ -57,13 +57,6 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.config = { ...DEFAULT_CONFIG, ...config };
 	}
 
-	/**
-	 * @deprecated Use {@link start}.
-	 */
-	init(): void {
-		this.start();
-	}
-
 	start(): void {
 		if (this.initialized) {
 			return;
@@ -72,13 +65,6 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.unsubscribeTransport = this.transport.onMessage((msg) => this.onMessage(msg));
 		this.initialized = true;
 		this.config.logger.log('[RpcClient] Initialized');
-	}
-
-	/**
-	 * @deprecated Use {@link stop}.
-	 */
-	destroy(): void {
-		this.stop();
 	}
 
 	stop(): void {
