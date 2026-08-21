@@ -414,13 +414,13 @@ describe('RpcServer', () => {
 		it('executes middleware in correct order (first registered = outermost)', async () => {
 			const order: string[] = [];
 			const [freshTransport] = TestTransport.createPair();
-			const mw1: RpcMiddleware = async (ctx) => {
+			const mw1: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('mw1-before');
 				const result = await ctx.next();
 				order.push('mw1-after');
 				return result;
 			};
-			const mw2: RpcMiddleware = async (ctx) => {
+			const mw2: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('mw2-before');
 				const result = await ctx.next();
 				order.push('mw2-after');
@@ -463,7 +463,7 @@ describe('RpcServer', () => {
 		it('short-circuits when middleware returns without calling next', async () => {
 			const handler = vi.fn(() => ({ result: 99 }));
 			const [freshTransport] = TestTransport.createPair();
-			const shortCircuit: RpcMiddleware = async () => {
+			const shortCircuit: RpcMiddleware<TestProcedures> = async () => {
 				return { result: 0, cached: true };
 			};
 
@@ -493,7 +493,7 @@ describe('RpcServer', () => {
 
 		it('short-circuits with RpcError when middleware throws RpcError', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const rateLimit: RpcMiddleware = async () => {
+			const rateLimit: RpcMiddleware<TestProcedures> = async () => {
 				throw new RpcError('RATE_LIMITED', 'Too many requests', { retryAfter: 5 });
 			};
 
@@ -525,7 +525,7 @@ describe('RpcServer', () => {
 		it('sends error when middleware throws plain Error', async () => {
 			const onError = vi.fn();
 			const [freshTransport] = TestTransport.createPair();
-			const failing: RpcMiddleware = async () => {
+			const failing: RpcMiddleware<TestProcedures> = async () => {
 				throw new Error('Middleware exploded');
 			};
 
@@ -557,7 +557,7 @@ describe('RpcServer', () => {
 
 		it('transforms response via middleware', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const transform: RpcMiddleware = async (ctx) => {
+			const transform: RpcMiddleware<TestProcedures> = async (ctx) => {
 				const result = (await ctx.next()) as { result: number };
 				return { ...result, enriched: true };
 			};
@@ -588,11 +588,11 @@ describe('RpcServer', () => {
 		it('supports config array + .use() mix (config runs before .use())', async () => {
 			const order: string[] = [];
 			const [freshTransport] = TestTransport.createPair();
-			const configMw: RpcMiddleware = async (ctx) => {
+			const configMw: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('config');
 				return ctx.next();
 			};
-			const useMw: RpcMiddleware = async (ctx) => {
+			const useMw: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('use');
 				return ctx.next();
 			};
@@ -625,7 +625,7 @@ describe('RpcServer', () => {
 
 		it('works with sync (non-promise) middleware', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const syncMw: RpcMiddleware = (ctx) => ctx.next();
+			const syncMw: RpcMiddleware<TestProcedures> = (ctx) => ctx.next();
 
 			const s = new RpcServer<TestProcedures, TestNotifications>(freshTransport, {
 				middleware: [syncMw],
@@ -652,10 +652,10 @@ describe('RpcServer', () => {
 
 		it('validation middleware: rejects invalid payload with RpcError', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const validator: RpcMiddleware = async (ctx) => {
+			const validator: RpcMiddleware<TestProcedures> = async (ctx) => {
 				if (ctx.procedure === 'add') {
-					const payload = ctx.payload as { a: unknown; b: unknown };
-					if (typeof payload.a !== 'number' || typeof payload.b !== 'number') {
+					const { a, b } = ctx.payload;
+					if (typeof a !== 'number' || typeof b !== 'number') {
 						throw new RpcError('VALIDATION', 'a and b must be numbers', {
 							field: 'payload',
 						});
@@ -709,7 +709,7 @@ describe('RpcServer', () => {
 			const firstResponse = freshTransport.getLastSent() as Record<string, unknown>;
 			expect(firstResponse.response).toEqual({ result: 3 });
 
-			const mw: RpcMiddleware = async (ctx) => {
+			const mw: RpcMiddleware<TestProcedures> = async (ctx) => {
 				const result = (await ctx.next()) as { result: number };
 				return { result: result.result * 10 };
 			};
@@ -734,7 +734,7 @@ describe('RpcServer', () => {
 
 		it('error normalization: middleware catches handler error and transforms it', async () => {
 			const [freshTransport] = TestTransport.createPair();
-			const normalize: RpcMiddleware = async (ctx) => {
+			const normalize: RpcMiddleware<TestProcedures> = async (ctx) => {
 				try {
 					return await ctx.next();
 				} catch {
@@ -772,17 +772,17 @@ describe('RpcServer', () => {
 		it('short-circuit stops the chain (inner middleware never runs)', async () => {
 			const order: string[] = [];
 			const [freshTransport] = TestTransport.createPair();
-			const mw1: RpcMiddleware = async (ctx) => {
+			const mw1: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('mw1-before');
 				const result = await ctx.next();
 				order.push('mw1-after');
 				return result;
 			};
-			const mw2: RpcMiddleware = async () => {
+			const mw2: RpcMiddleware<TestProcedures> = async () => {
 				order.push('mw2-before');
 				return { result: -1, intercepted: true };
 			};
-			const mw3: RpcMiddleware = async (ctx) => {
+			const mw3: RpcMiddleware<TestProcedures> = async (ctx) => {
 				order.push('mw3-before');
 				const result = await ctx.next();
 				order.push('mw3-after');
@@ -819,7 +819,7 @@ describe('RpcServer', () => {
 		it('middleware does async work before and after next() (timing pattern)', async () => {
 			const timings: Record<string, { before: number; after: number; duration: number }> = {};
 			const [freshTransport] = TestTransport.createPair();
-			const timing: RpcMiddleware = async (ctx) => {
+			const timing: RpcMiddleware<TestProcedures> = async (ctx) => {
 				const before = Date.now();
 				await new Promise((r) => setTimeout(r, 10));
 				const result = await ctx.next();

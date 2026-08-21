@@ -6,6 +6,7 @@ import type {
 	RpcRequest,
 	RpcResponse,
 	RpcResponseMessage,
+	OpenRpcProcedureSchema,
 	ProcedureConstraint,
 } from './types';
 import { decodeRpcMessage } from './protocol';
@@ -17,42 +18,47 @@ type RpcHandler<Schema extends ProcedureConstraint<Schema>, T extends RpcProcedu
 	payload: RpcRequest<Schema, T>,
 ) => RpcResponse<Schema, T> | Promise<RpcResponse<Schema, T>>;
 
-export interface RpcMiddlewareContext {
-	id: string;
-	procedure: string;
-	payload: unknown;
-	next: () => Promise<unknown>;
-}
+/**
+ * Per-request middleware context, discriminated by procedure name: narrowing
+ * on `ctx.procedure` narrows `ctx.payload` to that procedure's request type.
+ * Without a schema type parameter, `procedure` is `string` and `payload`
+ * is `unknown`.
+ */
+export type RpcMiddlewareContext<
+	Procedures extends ProcedureConstraint<Procedures> = OpenRpcProcedureSchema,
+> = {
+	[T in RpcProcedure<Procedures>]: {
+		id: string;
+		procedure: T;
+		payload: RpcRequest<Procedures, T>;
+		next: () => Promise<unknown>;
+	};
+}[RpcProcedure<Procedures>];
 
-export type RpcMiddleware = (ctx: RpcMiddlewareContext) => Promise<unknown>;
+export type RpcMiddleware<
+	Procedures extends ProcedureConstraint<Procedures> = OpenRpcProcedureSchema,
+> = (ctx: RpcMiddlewareContext<Procedures>) => Promise<unknown>;
 
-export interface RpcServerConfig {
+export interface RpcServerConfig<Procedures extends ProcedureConstraint<Procedures>> {
 	logger: Logger;
 	/** Must not throw; a throwing callback violates the server's error contract. */
 	onError?: (procedure: string, error: Error) => void;
-	middleware?: RpcMiddleware | RpcMiddleware[];
+	middleware?: RpcMiddleware<Procedures>[];
 }
-
-const DEFAULT_CONFIG: RpcServerConfig = {
-	logger: noopLogger,
-};
 
 class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notifications extends object> {
 	private handlers = new Map<string, RpcHandler<Procedures, RpcProcedure<Procedures>>>();
-	private config: RpcServerConfig;
-	private middleware: RpcMiddleware[] = [];
+	private config: RpcServerConfig<Procedures>;
+	private middleware: RpcMiddleware<Procedures>[] = [];
 	private unsubscribeTransport: (() => void) | null = null;
 	private running = false;
 
 	constructor(
 		private transport: RpcTransport,
-		config: Partial<RpcServerConfig> = {},
+		config: Partial<RpcServerConfig<Procedures>> = {},
 	) {
-		this.config = { ...DEFAULT_CONFIG, ...config };
-		const mw = config.middleware;
-		if (mw) {
-			this.middleware = Array.isArray(mw) ? mw : [mw];
-		}
+		this.config = { logger: noopLogger, ...config };
+		this.middleware = config.middleware ?? [];
 	}
 
 	start(): void {
@@ -75,7 +81,7 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.running = false;
 	}
 
-	use(middleware: RpcMiddleware): this {
+	use(middleware: RpcMiddleware<Procedures>): this {
 		this.middleware.push(middleware);
 		return this;
 	}
@@ -141,7 +147,9 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		try {
-			const ctx = { id, procedure, payload };
+			// The wire-level procedure name is only known at runtime; the context
+			// is shaped to the schema's discriminated union for middleware.
+			const ctx = { id, procedure, payload } as unknown as RpcMiddlewareContext<Procedures>;
 			const chain: () => Promise<unknown> = this.middleware.reduceRight<
 				() => Promise<unknown>
 			>(
@@ -228,7 +236,7 @@ function createRpcServer<
 	Notifications extends object,
 >(
 	transport: RpcTransport,
-	config?: Partial<RpcServerConfig>,
+	config?: Partial<RpcServerConfig<Procedures>>,
 ): RpcServer<Procedures, Notifications> {
 	return new RpcServer<Procedures, Notifications>(transport, config);
 }

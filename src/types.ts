@@ -14,7 +14,7 @@ export type ProcedureConstraint<Schema> = {
 	[K in Extract<keyof Schema, string>]-?: RpcProcedureDefinition;
 };
 
-interface OpenRpcProcedureSchema {
+export interface OpenRpcProcedureSchema {
 	[name: string]: RpcProcedureDefinition;
 }
 

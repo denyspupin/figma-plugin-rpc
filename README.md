@@ -274,11 +274,11 @@ rpc.start();
 
 **Config options:**
 
-| Option       | Type                               | Default      | Description                                         |
-| ------------ | ---------------------------------- | ------------ | --------------------------------------------------- |
-| `logger`     | `Logger`                           | `noopLogger` | Custom logger implementing `Logger` interface       |
-| `onError`    | `(procedure, error) => void`       | —            | Callback for unhandled errors in handlers           |
-| `middleware` | `RpcMiddleware \| RpcMiddleware[]` | —            | Middleware function(s) executed around each handler |
+| Option       | Type                          | Default      | Description                                       |
+| ------------ | ----------------------------- | ------------ | ------------------------------------------------- |
+| `logger`     | `Logger`                      | `noopLogger` | Custom logger implementing `Logger` interface     |
+| `onError`    | `(procedure, error) => void`  | —            | Callback for unhandled errors in handlers         |
+| `middleware` | `RpcMiddleware<Procedures>[]` | —            | Middleware functions executed around each handler |
 
 ### `RpcError`
 
@@ -514,7 +514,7 @@ import { z } from 'zod';
 import { RpcError } from 'figma-plugin-rpc';
 import type { RpcMiddleware } from 'figma-plugin-rpc';
 
-const validators = {
+const validators: Partial<Record<keyof Procedures, z.ZodTypeAny>> = {
 	'create-rectangle': z.object({
 		x: z.number(),
 		y: z.number(),
@@ -529,8 +529,8 @@ const validators = {
 	}),
 };
 
-const validation: RpcMiddleware = async (ctx) => {
-	const schema = validators[ctx.procedure as keyof typeof validators];
+const validation: RpcMiddleware<Procedures> = async (ctx) => {
+	const schema = validators[ctx.procedure];
 	if (schema) {
 		const result = schema.safeParse(ctx.payload);
 		if (!result.success) {
@@ -627,18 +627,30 @@ import type { RpcMiddleware } from 'figma-plugin-rpc';
 
 **Signature:**
 
-```ts
-interface RpcMiddlewareContext {
-	id: string;
-	procedure: string;
-	payload: unknown;
-	next: () => Promise<unknown>;
-}
+The context is a discriminated union keyed by procedure name. Narrowing on `ctx.procedure` narrows `ctx.payload` to that procedure's request type — no casts needed:
 
-type RpcMiddleware = (ctx: RpcMiddlewareContext) => Promise<unknown>;
+```ts
+type RpcMiddleware<Procedures extends ProcedureConstraint<Procedures>> = (
+	ctx: RpcMiddlewareContext<Procedures>,
+) => Promise<unknown>;
+
+// For a schema with 'add' and 'getData', the context is:
+//   | { id: string; procedure: 'add'; payload: { a: number; b: number }; next }
+//   | { id: string; procedure: 'getData'; payload: void; next }
+
+const validator: RpcMiddleware<Procedures> = async (ctx) => {
+	if (ctx.procedure === 'add') {
+		// ctx.payload is narrowed to the 'add' request type
+		const { a, b } = ctx.payload;
+		if (typeof a !== 'number' || typeof b !== 'number') {
+			throw new RpcError('VALIDATION_ERROR', 'a and b must be numbers');
+		}
+	}
+	return ctx.next();
+};
 ```
 
-**Registration** — via config or `.use()` (or both):
+**Registration** — via config array or `.use()`:
 
 ```ts
 const rpc = createRpcServer<Procedures, Notifications>(transport, {
@@ -661,7 +673,7 @@ Request → mw1 → mw2 → handler → mw2 → mw1 → Response
 Short-circuit mutating procedures when the plugin is in read-only mode:
 
 ```ts
-const readOnlyGuard: RpcMiddleware = async (ctx) => {
+const readOnlyGuard: RpcMiddleware<Procedures> = async (ctx) => {
 	if (ctx.procedure === 'delete-layer' && isReadOnly) {
 		throw new RpcError('READ_ONLY', 'Plugin is in read-only mode');
 	}
@@ -675,7 +687,7 @@ Throttle expensive Figma operations:
 
 ```ts
 const callCount: Record<string, number[]> = {};
-const rateLimit: RpcMiddleware = async (ctx) => {
+const rateLimit: RpcMiddleware<Procedures> = async (ctx) => {
 	const now = Date.now();
 	const window = callCount[ctx.procedure] ?? [];
 	callCount[ctx.procedure] = window.filter((t) => now - t < 1000);
@@ -693,7 +705,7 @@ const rateLimit: RpcMiddleware = async (ctx) => {
 Wrap `next()` in try/finally to measure the full chain:
 
 ```ts
-const timing: RpcMiddleware = async (ctx) => {
+const timing: RpcMiddleware<Procedures> = async (ctx) => {
 	const start = Date.now();
 	try {
 		return await ctx.next();
@@ -709,7 +721,7 @@ const timing: RpcMiddleware = async (ctx) => {
 Map handler errors to stable client-facing codes:
 
 ```ts
-const normalizeErrors: RpcMiddleware = async (ctx) => {
+const normalizeErrors: RpcMiddleware<Procedures> = async (ctx) => {
 	try {
 		return await ctx.next();
 	} catch (error) {
