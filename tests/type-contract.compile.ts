@@ -1,6 +1,7 @@
 import {
 	createRpcClient,
 	createRpcServer,
+	type RpcMiddleware,
 	type RpcNotification,
 	type RpcNotificationSchema,
 	type ProcedureConstraint,
@@ -166,3 +167,17 @@ function createGenericClient<
 }
 
 void createGenericClient<TestProcedures, TestNotifications>;
+
+// === Middleware usage compiles exactly as documented in README ===
+const timingMiddleware: RpcMiddleware = async (ctx) => {
+	const start = Date.now();
+	try {
+		return await ctx.next();
+	} finally {
+		void (Date.now() - start);
+	}
+};
+
+createRpcServer<TestProcedures, TestNotifications>(transport, {
+	middleware: [timingMiddleware],
+});
