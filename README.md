@@ -530,7 +530,7 @@ const validators = {
 	}),
 };
 
-const validation: RpcMiddleware = async (ctx, next) => {
+const validation: RpcMiddleware = async (ctx) => {
 	const schema = validators[ctx.procedure as keyof typeof validators];
 	if (schema) {
 		const result = schema.safeParse(ctx.payload);
@@ -542,7 +542,7 @@ const validation: RpcMiddleware = async (ctx, next) => {
 			);
 		}
 	}
-	return next();
+	return ctx.next();
 };
 
 const rpc = createRpcServer<Procedures, Notifications>(transport, {
@@ -660,11 +660,11 @@ Request → mw1 → mw2 → handler → mw2 → mw1 → Response
 Short-circuit mutating procedures when the plugin is in read-only mode:
 
 ```ts
-const readOnlyGuard: RpcMiddleware = async (ctx, next) => {
+const readOnlyGuard: RpcMiddleware = async (ctx) => {
 	if (ctx.procedure === 'delete-layer' && isReadOnly) {
 		throw new RpcError('READ_ONLY', 'Plugin is in read-only mode');
 	}
-	return next();
+	return ctx.next();
 };
 ```
 
@@ -674,7 +674,7 @@ Throttle expensive Figma operations:
 
 ```ts
 const callCount: Record<string, number[]> = {};
-const rateLimit: RpcMiddleware = async (ctx, next) => {
+const rateLimit: RpcMiddleware = async (ctx) => {
 	const now = Date.now();
 	const window = callCount[ctx.procedure] ?? [];
 	callCount[ctx.procedure] = window.filter((t) => now - t < 1000);
@@ -683,7 +683,7 @@ const rateLimit: RpcMiddleware = async (ctx, next) => {
 		throw new RpcError('RATE_LIMITED', `Too many calls to "${ctx.procedure}"`);
 	}
 	callCount[ctx.procedure].push(now);
-	return next();
+	return ctx.next();
 };
 ```
 
@@ -692,10 +692,10 @@ const rateLimit: RpcMiddleware = async (ctx, next) => {
 Wrap `next()` in try/finally to measure the full chain:
 
 ```ts
-const timing: RpcMiddleware = async (ctx, next) => {
+const timing: RpcMiddleware = async (ctx) => {
 	const start = Date.now();
 	try {
-		return await next();
+		return await ctx.next();
 	} finally {
 		const duration = Date.now() - start;
 		if (duration > 500) telemetry.slowCall(ctx.procedure, duration);
@@ -708,9 +708,9 @@ const timing: RpcMiddleware = async (ctx, next) => {
 Map handler errors to stable client-facing codes:
 
 ```ts
-const normalizeErrors: RpcMiddleware = async (ctx, next) => {
+const normalizeErrors: RpcMiddleware = async (ctx) => {
 	try {
-		return await next();
+		return await ctx.next();
 	} catch (error) {
 		if (error instanceof RpcError) throw error;
 		throw new RpcError('INTERNAL', 'An unexpected error occurred');
