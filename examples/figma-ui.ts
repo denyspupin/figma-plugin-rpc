@@ -21,7 +21,7 @@ interface Notifications extends RpcNotificationSchema {
 }
 
 const rpc = createRpcClient<Procedures, Notifications>(new FigmaUiTransport());
-rpc.init();
+rpc.start();
 
 async function main() {
 	const { nodeIds } = await rpc.call('get-selection');

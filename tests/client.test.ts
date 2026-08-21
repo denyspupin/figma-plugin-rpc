@@ -265,9 +265,21 @@ describe('RpcClient', () => {
 		const promise = client.call('add', { a: 1, b: 2 });
 		client.destroy();
 
-		await expect(promise).rejects.toThrow(/destroyed/);
+		await expect(promise).rejects.toThrow(/stopped/);
 		expect(client.getPendingCount()).toBe(0);
 		expect(client.isInitialized()).toBe(false);
+	});
+
+	it('start/stop are the primary lifecycle names', async () => {
+		const [freshTransport] = TestTransport.createPair();
+		const c = new RpcClient<TestProcedures, TestNotifications>(freshTransport);
+		c.start();
+
+		const promise = c.call('add', { a: 1, b: 2 });
+		c.stop();
+
+		await expect(promise).rejects.toThrow(/stopped/);
+		await expect(c.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
 	});
 
 	it('init is idempotent', () => {

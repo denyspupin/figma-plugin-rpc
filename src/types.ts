@@ -56,6 +56,10 @@ export type RpcNotificationPayload<
 	T extends RpcNotification<Schema>,
 > = Schema[T];
 
+/**
+ * @deprecated Protocol versioning is being removed: messages no longer carry a
+ * version field as of 1.3, and the decode-side machinery is removed in v2.
+ */
 export const PROTOCOL_VERSION = 1;
 
 export interface RpcRequestMessage<

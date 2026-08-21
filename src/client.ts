@@ -7,9 +7,8 @@ import type {
 	RpcResponse,
 	ProcedureConstraint,
 } from './types';
-import { PROTOCOL_VERSION } from './types';
 import { decodeRpcMessage, type DecodedRpcResponse } from './protocol';
-import { formatDuration, noopLogger, type Logger } from './transport';
+import { formatDuration, noopLogger, type Logger } from './logger';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
 
@@ -49,7 +48,14 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.config = { ...DEFAULT_CONFIG, ...config };
 	}
 
+	/**
+	 * @deprecated Use {@link start}.
+	 */
 	init(): void {
+		this.start();
+	}
+
+	start(): void {
 		if (this.initialized) {
 			return;
 		}
@@ -59,7 +65,14 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		this.config.logger.log('[RpcClient] Initialized');
 	}
 
+	/**
+	 * @deprecated Use {@link stop}.
+	 */
 	destroy(): void {
+		this.stop();
+	}
+
+	stop(): void {
 		if (this.initialized) {
 			this.unsubscribeTransport?.();
 		}
@@ -67,7 +80,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 		for (const call of this.pending.values()) {
 			call.settle();
-			call.reject(new Error(`RPC client destroyed while "${call.procedure}" was pending`));
+			call.reject(new Error(`RPC client stopped while "${call.procedure}" was pending`));
 		}
 
 		this.pending.clear();
@@ -85,7 +98,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 				]
 	): Promise<RpcResponse<Procedures, T>> {
 		if (!this.initialized) {
-			return Promise.reject(new Error('RPC client not initialized. Call init() first.'));
+			return Promise.reject(new Error('RPC client not initialized. Call start() first.'));
 		}
 
 		const [payload, options] = args;
@@ -156,7 +169,6 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 
 			const message: RpcRequestMessage<Procedures, T> = {
 				__rpc: true,
-				v: PROTOCOL_VERSION,
 				id,
 				procedure,
 				payload,
@@ -284,10 +296,14 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 	}
 
+	/** Diagnostics aid: number of in-flight requests. */
 	getPendingCount(): number {
 		return this.pending.size;
 	}
 
+	/**
+	 * @deprecated Initialization state is observable through behavior; removed in v2.
+	 */
 	isInitialized(): boolean {
 		return this.initialized;
 	}
