@@ -166,13 +166,6 @@ export interface Procedures extends RpcProcedureSchema {
 		request: void;
 		response: { pageCount: number; selectionCount: number };
 	};
-
-	// With declared error metadata
-	'delete-node': {
-		request: { nodeId: string };
-		response: { success: boolean };
-		error: { code: 'NODE_NOT_FOUND' | 'NODE_LOCKED'; nodeId: string };
-	};
 }
 
 export interface Notifications extends RpcNotificationSchema {
@@ -204,12 +197,11 @@ interface Procedures extends RpcProcedureSchema {
 	'create-node': {
 		request: { type: 'rectangle' | 'ellipse'; x: number; y: number };
 		response: { nodeId: string };
-		error?: { code: string; message: string }; // optional error metadata
 	};
 }
 ```
 
-> **Note:** The `error` member is optional type metadata. You can extract it with `RpcProcedureError<Procedures, 'create-node'>`, but it does not constrain thrown values or create typed Promise rejections. TypeScript `catch` values are always `unknown`; use `instanceof RpcError` to narrow runtime errors.
+Structured errors are runtime values: throw `RpcError` with a code and optional data, and narrow with `instanceof` on the client (see [RpcError](#rpcerror)).
 
 ### `createRpcClient(transport, config?)`
 
@@ -370,8 +362,6 @@ try {
 	}
 }
 ```
-
-> The `error` field is metadata extractable with `RpcProcedureError`; handlers and thrown values do not automatically enforce it. At runtime, use `instanceof RpcError` and inspect `error.code`.
 
 #### Global error handler
 
