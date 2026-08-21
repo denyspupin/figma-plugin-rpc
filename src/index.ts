@@ -14,8 +14,6 @@ export type {
 	RpcNotificationMessage,
 } from './types';
 
-export { PROTOCOL_VERSION } from './types';
-
 export {
 	decodeRpcMessage,
 	isRpcRequest,

@@ -264,23 +264,6 @@ describe('RpcServer', () => {
 	});
 
 	describe('Handler safety', () => {
-		it('returns a protocol error for a correlated unsupported request version', async () => {
-			transport.deliver({
-				__rpc: true,
-				v: 2,
-				id: 'req-version',
-				procedure: 'add',
-				payload: { a: 1, b: 2 },
-			});
-
-			await vi.waitFor(() => {
-				expect(transport.getSentCount()).toBe(1);
-			});
-			const response = transport.getLastSent() as Record<string, unknown>;
-			expect(response.id).toBe('req-version');
-			expect(response.error).toContain('unsupported protocol version');
-		});
-
 		it.each([
 			['mixed request/response', { payload: { a: 1, b: 2 }, response: { result: 3 } }],
 			[

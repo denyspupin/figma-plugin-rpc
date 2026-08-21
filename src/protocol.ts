@@ -1,19 +1,16 @@
 import type { RpcNotificationMessage, RpcRequestMessage, RpcResponseMessage } from './types';
-import { PROTOCOL_VERSION } from './types';
 
 export interface DecodedRpcRequest {
 	kind: 'request';
 	id: string;
 	procedure: string;
 	payload: unknown;
-	version: number;
 }
 
 export interface DecodedRpcResponse {
 	kind: 'response';
 	id: string;
 	procedure: string;
-	version: number;
 	success: boolean;
 	response?: unknown;
 	error?: string;
@@ -25,7 +22,6 @@ export interface DecodedRpcNotification {
 	kind: 'notification';
 	notification: string;
 	payload: unknown;
-	version: number;
 }
 
 export type DecodedRpcMessage = DecodedRpcRequest | DecodedRpcResponse | DecodedRpcNotification;
@@ -46,27 +42,6 @@ const hasOwn = (obj: object, key: string): boolean =>
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
-
-function readVersion(msg: Record<string, unknown>): number | undefined {
-	if (!hasOwn(msg, 'v')) {
-		return undefined;
-	}
-
-	const v = msg.v;
-	if (v === undefined) {
-		return undefined;
-	}
-
-	if (typeof v !== 'number' || !Number.isFinite(v)) {
-		return -1;
-	}
-
-	return v;
-}
-
-function isSupportedVersion(version: number | undefined): boolean {
-	return version === undefined || version === PROTOCOL_VERSION;
-}
 
 function readNonEmptyString(msg: Record<string, unknown>, key: string): string | undefined {
 	if (!hasOwn(msg, key)) {
@@ -96,7 +71,6 @@ function withCorrelation(error: DecodeError, msg: Record<string, unknown>): Deco
 }
 
 function decodeRequest(msg: Record<string, unknown>): DecodedRpcRequest | DecodeError {
-	const version = readVersion(msg);
 	const id = readNonEmptyString(msg, 'id');
 	const procedure = readNonEmptyString(msg, 'procedure');
 
@@ -112,21 +86,15 @@ function decodeRequest(msg: Record<string, unknown>): DecodedRpcRequest | Decode
 		return { reason: 'request missing "payload" property' };
 	}
 
-	if (!isSupportedVersion(version)) {
-		return { reason: `unsupported protocol version: ${version}` };
-	}
-
 	return {
 		kind: 'request',
 		id,
 		procedure,
 		payload: msg.payload,
-		version: version ?? PROTOCOL_VERSION,
 	};
 }
 
 function decodeResponse(msg: Record<string, unknown>): DecodedRpcResponse | DecodeError {
-	const version = readVersion(msg);
 	const id = readNonEmptyString(msg, 'id');
 	const procedure = readNonEmptyString(msg, 'procedure');
 
@@ -149,10 +117,6 @@ function decodeResponse(msg: Record<string, unknown>): DecodedRpcResponse | Deco
 		return { reason: 'response contains neither "response" nor "error"' };
 	}
 
-	if (!isSupportedVersion(version)) {
-		return { reason: `unsupported protocol version: ${version}` };
-	}
-
 	if (hasError) {
 		const errorMessage = msg.error;
 		if (typeof errorMessage !== 'string') {
@@ -163,7 +127,6 @@ function decodeResponse(msg: Record<string, unknown>): DecodedRpcResponse | Deco
 			kind: 'response',
 			id,
 			procedure,
-			version: version ?? PROTOCOL_VERSION,
 			success: false,
 			error: errorMessage,
 		};
@@ -192,14 +155,12 @@ function decodeResponse(msg: Record<string, unknown>): DecodedRpcResponse | Deco
 		kind: 'response',
 		id,
 		procedure,
-		version: version ?? PROTOCOL_VERSION,
 		success: true,
 		response: msg.response,
 	};
 }
 
 function decodeNotification(msg: Record<string, unknown>): DecodedRpcNotification | DecodeError {
-	const version = readVersion(msg);
 	const notification = readNonEmptyString(msg, 'notification');
 
 	if (!notification) {
@@ -210,15 +171,10 @@ function decodeNotification(msg: Record<string, unknown>): DecodedRpcNotificatio
 		return { reason: 'notification missing "payload" property' };
 	}
 
-	if (!isSupportedVersion(version)) {
-		return { reason: `unsupported protocol version: ${version}` };
-	}
-
 	return {
 		kind: 'notification',
 		notification,
 		payload: msg.payload,
-		version: version ?? PROTOCOL_VERSION,
 	};
 }
 

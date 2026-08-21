@@ -17,7 +17,7 @@ Type-safe RPC between Figma's main thread and UI iframe. Define procedures once,
 - [API reference](#api-reference)
 - [Guides](#guides)
 - [Compile-time safety](#compile-time-safety)
-- [Protocol versioning](#protocol-versioning)
+- [Wire format](#wire-format)
 - [Custom transports](#custom-transports)
 - [Middleware](#middleware)
 - [License](#license)
@@ -51,7 +51,6 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 | Structured errors   | Throw `RpcError` with code and data; check `instanceof` on client                                            |
 | Runtime validation  | Validate payloads before handlers execute                                                                    |
 | Protocol decoding   | All wire messages are validated before reaching client/server                                                |
-| Protocol versioning | Wire format includes version field for future upgrades                                                       |
 
 ## Install
 
@@ -753,15 +752,11 @@ function makeClient<
 
 Earlier wrappers written as `Procedures extends RpcProcedureSchema` should migrate to this constraint. Concrete schemas that use `interface Procedures extends RpcProcedureSchema` remain unchanged.
 
-### Protocol versioning
+### Wire format
 
-The wire protocol includes a version field (`v: 1`). The library:
+Messages are plain objects dispatched by marker flags: requests and responses carry `__rpc: true`, notifications carry `__rpcNotification: true`. Requests have `id`, `procedure`, `payload`; responses have `id`, `procedure`, and either `response` or `error` (plus optional `code`/`data`); notifications have `notification` and `payload`.
 
-- **Sends** version 1 on all outgoing messages
-- **Accepts** messages with `v: 1` or no `v` (legacy compatibility)
-- **Rejects** messages with unsupported versions (e.g., `v: 2`)
-
-Malformed uncorrelated messages are ignored with a debug log entry. When correlation data is available, malformed requests receive a protocol error and malformed responses immediately reject the matching pending call.
+Malformed uncorrelated messages are ignored with a debug log entry. When correlation data is available, malformed requests receive a protocol error and malformed responses immediately reject the matching pending call. Unknown extra fields (such as the `v` version field sent by 1.x peers) are ignored.
 
 ### Custom transports
 

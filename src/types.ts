@@ -56,18 +56,11 @@ export type RpcNotificationPayload<
 	T extends RpcNotification<Schema>,
 > = Schema[T];
 
-/**
- * @deprecated Protocol versioning is being removed: messages no longer carry a
- * version field as of 1.3, and the decode-side machinery is removed in v2.
- */
-export const PROTOCOL_VERSION = 1;
-
 export interface RpcRequestMessage<
 	Schema extends ProcedureConstraint<Schema> = OpenRpcProcedureSchema,
 	T extends RpcProcedure<Schema> = RpcProcedure<Schema>,
 > {
 	__rpc: true;
-	v?: number;
 	id: string;
 	procedure: T;
 	payload: RpcRequest<Schema, T>;
@@ -79,14 +72,12 @@ export type RpcResponseMessage<
 > =
 	| {
 			__rpc: true;
-			v?: number;
 			id: string;
 			procedure: T;
 			response: RpcResponse<Schema, T>;
 	  }
 	| {
 			__rpc: true;
-			v?: number;
 			id: string;
 			procedure: T;
 			error: string;
@@ -99,7 +90,6 @@ export interface RpcNotificationMessage<
 	T extends RpcNotification<Schema> = RpcNotification<Schema>,
 > {
 	__rpcNotification: true;
-	v?: number;
 	notification: T;
 	payload: RpcNotificationPayload<Schema, T>;
 }

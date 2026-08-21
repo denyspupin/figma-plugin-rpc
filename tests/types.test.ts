@@ -1,29 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isRpcNotification, isRpcRequest, isRpcResponse, PROTOCOL_VERSION } from '../src';
-
-describe('PROTOCOL_VERSION', () => {
-	it('is defined and equals 1', () => {
-		expect(PROTOCOL_VERSION).toBe(1);
-	});
-});
+import { isRpcNotification, isRpcRequest, isRpcResponse } from '../src';
 
 describe('isRpcRequest', () => {
 	it('returns true for valid request', () => {
 		expect(
 			isRpcRequest({
 				__rpc: true,
-				id: 'abc',
-				procedure: 'test',
-				payload: { foo: 'bar' },
-			}),
-		).toBe(true);
-	});
-
-	it('returns true for request with protocol version', () => {
-		expect(
-			isRpcRequest({
-				__rpc: true,
-				v: 1,
 				id: 'abc',
 				procedure: 'test',
 				payload: { foo: 'bar' },
@@ -88,18 +70,6 @@ describe('isRpcResponse', () => {
 		expect(
 			isRpcResponse({
 				__rpc: true,
-				id: 'abc',
-				procedure: 'test',
-				response: { ok: true },
-			}),
-		).toBe(true);
-	});
-
-	it('returns true for response with protocol version', () => {
-		expect(
-			isRpcResponse({
-				__rpc: true,
-				v: 1,
 				id: 'abc',
 				procedure: 'test',
 				response: { ok: true },
@@ -188,17 +158,6 @@ describe('isRpcNotification', () => {
 		expect(
 			isRpcNotification({
 				__rpcNotification: true,
-				notification: 'test',
-				payload: { data: 42 },
-			}),
-		).toBe(true);
-	});
-
-	it('returns true for notification with protocol version', () => {
-		expect(
-			isRpcNotification({
-				__rpcNotification: true,
-				v: 1,
 				notification: 'test',
 				payload: { data: 42 },
 			}),
