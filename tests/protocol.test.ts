@@ -46,8 +46,8 @@ describe('decodeRpcMessage', () => {
 			payload: { a: 1, b: 2 },
 		};
 
-		it('decodes a valid version-1 request', () => {
-			const result = decodeRpcMessage({ ...validRequest, v: 1 });
+		it('decodes a valid request', () => {
+			const result = decodeRpcMessage(validRequest);
 			expect(result.ok).toBe(true);
 			if (result.ok) {
 				expect(result.value.kind).toBe('request');
@@ -55,17 +55,13 @@ describe('decodeRpcMessage', () => {
 					expect(result.value.id).toBe('req-1');
 					expect(result.value.procedure).toBe('add');
 					expect(result.value.payload).toEqual({ a: 1, b: 2 });
-					expect(result.value.version).toBe(1);
 				}
 			}
 		});
 
-		it('decodes a legacy request without v', () => {
-			const result = decodeRpcMessage(validRequest);
+		it('tolerates unknown fields such as a legacy version marker', () => {
+			const result = decodeRpcMessage({ ...validRequest, v: 1 });
 			expect(result.ok).toBe(true);
-			if (result.ok && result.value.kind === 'request') {
-				expect(result.value.version).toBe(1);
-			}
 		});
 
 		it('accepts payload set to undefined', () => {
@@ -135,57 +131,6 @@ describe('decodeRpcMessage', () => {
 			expect(result.ok).toBe(false);
 		});
 
-		it('rejects unsupported version', () => {
-			const result = decodeRpcMessage({
-				__rpc: true,
-				v: 99,
-				id: 'req-1',
-				procedure: 'add',
-				payload: {},
-			});
-			expect(result.ok).toBe(false);
-			if (!result.ok) {
-				expect(result.error.reason).toContain('unsupported protocol version');
-				expect(result.error.correlation).toEqual({
-					id: 'req-1',
-					procedure: 'add',
-				});
-			}
-		});
-
-		it('rejects non-number version', () => {
-			const result = decodeRpcMessage({
-				__rpc: true,
-				v: '1',
-				id: 'req-1',
-				procedure: 'add',
-				payload: {},
-			});
-			expect(result.ok).toBe(false);
-		});
-
-		it('rejects NaN version', () => {
-			const result = decodeRpcMessage({
-				__rpc: true,
-				v: NaN,
-				id: 'req-1',
-				procedure: 'add',
-				payload: {},
-			});
-			expect(result.ok).toBe(false);
-		});
-
-		it('rejects Infinity version', () => {
-			const result = decodeRpcMessage({
-				__rpc: true,
-				v: Infinity,
-				id: 'req-1',
-				procedure: 'add',
-				payload: {},
-			});
-			expect(result.ok).toBe(false);
-		});
-
 		it('rejects inherited properties (id from prototype)', () => {
 			const proto = { id: 'inherited-id', procedure: 'inherited-proc', payload: {} };
 			const msg = Object.create(proto);
@@ -211,7 +156,7 @@ describe('decodeRpcMessage', () => {
 		};
 
 		it('decodes a valid success response', () => {
-			const result = decodeRpcMessage({ ...validSuccessResponse, v: 1 });
+			const result = decodeRpcMessage(validSuccessResponse);
 			expect(result.ok).toBe(true);
 			if (result.ok && result.value.kind === 'response') {
 				expect(result.value.success).toBe(true);
@@ -222,17 +167,12 @@ describe('decodeRpcMessage', () => {
 		});
 
 		it('decodes a valid error response', () => {
-			const result = decodeRpcMessage({ ...validErrorResponse, v: 1 });
+			const result = decodeRpcMessage(validErrorResponse);
 			expect(result.ok).toBe(true);
 			if (result.ok && result.value.kind === 'response') {
 				expect(result.value.success).toBe(false);
 				expect(result.value.error).toBe('Something failed');
 			}
-		});
-
-		it('decodes legacy response without v', () => {
-			const result = decodeRpcMessage(validSuccessResponse);
-			expect(result.ok).toBe(true);
 		});
 
 		it('decodes error response with code and data', () => {
@@ -363,17 +303,6 @@ describe('decodeRpcMessage', () => {
 			expect(result.ok).toBe(false);
 		});
 
-		it('rejects unsupported version', () => {
-			const result = decodeRpcMessage({
-				__rpc: true,
-				v: 2,
-				id: 'req-1',
-				procedure: 'add',
-				response: { result: 3 },
-			});
-			expect(result.ok).toBe(false);
-		});
-
 		it('rejects inherited properties', () => {
 			const proto = { id: 'inherited-id', procedure: 'inherited-proc', response: 'ok' };
 			const msg = Object.create(proto);
@@ -390,19 +319,13 @@ describe('decodeRpcMessage', () => {
 			payload: { value: 'hello' },
 		};
 
-		it('decodes a valid version-1 notification', () => {
-			const result = decodeRpcMessage({ ...validNotification, v: 1 });
+		it('decodes a valid notification', () => {
+			const result = decodeRpcMessage(validNotification);
 			expect(result.ok).toBe(true);
 			if (result.ok && result.value.kind === 'notification') {
 				expect(result.value.notification).toBe('update');
 				expect(result.value.payload).toEqual({ value: 'hello' });
-				expect(result.value.version).toBe(1);
 			}
-		});
-
-		it('decodes a legacy notification without v', () => {
-			const result = decodeRpcMessage(validNotification);
-			expect(result.ok).toBe(true);
 		});
 
 		it('accepts payload set to undefined', () => {
@@ -435,16 +358,6 @@ describe('decodeRpcMessage', () => {
 			const result = decodeRpcMessage({
 				__rpcNotification: true,
 				notification: 'update',
-			});
-			expect(result.ok).toBe(false);
-		});
-
-		it('rejects unsupported version', () => {
-			const result = decodeRpcMessage({
-				__rpcNotification: true,
-				v: 2,
-				notification: 'update',
-				payload: {},
 			});
 			expect(result.ok).toBe(false);
 		});
@@ -543,12 +456,6 @@ describe('isValidRpcRequest', () => {
 
 	it('returns false for missing payload', () => {
 		expect(isValidRpcRequest({ __rpc: true, id: '1', procedure: 'x' })).toBe(false);
-	});
-
-	it('returns false for unsupported version', () => {
-		expect(
-			isValidRpcRequest({ __rpc: true, v: 2, id: '1', procedure: 'x', payload: undefined }),
-		).toBe(false);
 	});
 
 	it('returns false for inherited properties', () => {
