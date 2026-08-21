@@ -169,7 +169,7 @@ function createGenericClient<
 void createGenericClient<TestProcedures, TestNotifications>;
 
 // === Middleware usage compiles exactly as documented in README ===
-const timingMiddleware: RpcMiddleware = async (ctx) => {
+const timingMiddleware: RpcMiddleware<TestProcedures> = async (ctx) => {
 	const start = Date.now();
 	try {
 		return await ctx.next();
@@ -180,4 +180,33 @@ const timingMiddleware: RpcMiddleware = async (ctx) => {
 
 createRpcServer<TestProcedures, TestNotifications>(transport, {
 	middleware: [timingMiddleware],
+});
+
+// === Typed middleware context narrows payload by procedure ===
+const validationMiddleware: RpcMiddleware<TestProcedures> = async (ctx) => {
+	switch (ctx.procedure) {
+		case 'add': {
+			const { a, b } = ctx.payload;
+			const _a: number = a;
+			const _b: number = b;
+			void _a;
+			void _b;
+			break;
+		}
+		case 'getData': {
+			// @ts-expect-error - getData's request is void; fields do not exist
+			const _missing = ctx.payload.missing;
+			void _missing;
+			break;
+		}
+	}
+	return ctx.next();
+};
+
+createRpcServer<TestProcedures, TestNotifications>(transport).use(validationMiddleware);
+
+// === Scalar middleware config form is removed ===
+createRpcServer<TestProcedures, TestNotifications>(transport, {
+	// @ts-expect-error - middleware must be an array
+	middleware: timingMiddleware,
 });
