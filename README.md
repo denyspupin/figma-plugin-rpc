@@ -40,18 +40,18 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 
 ## Features
 
-| Feature             | Description                                                        |
-| ------------------- | ------------------------------------------------------------------ |
-| Full type inference | Request and response types flow from schema to handlers to callers |
-| Zero dependencies   | No runtime dependencies; request IDs use built-in `crypto`         |
-| Async handlers      | Return promises from handlers, await on the client                 |
-| Notifications       | Fire-and-forget messages from server to client                     |
-| Timeouts            | Per-call or global timeout with clear error messages               |
-| Cancellation        | Stop awaiting with `AbortSignal` (client-side only)                |
-| Structured errors   | Throw `RpcError` with code and data; check `instanceof` on client  |
-| Runtime validation  | Validate payloads before handlers execute                          |
-| Protocol decoding   | All wire messages are validated before reaching client/server      |
-| Protocol versioning | Wire format includes version field for future upgrades             |
+| Feature             | Description                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Full type inference | Request and response types flow from schema to handlers to callers                                           |
+| Zero dependencies   | No runtime dependencies; request IDs are generated without Web Crypto (unavailable in Figma's plugin iframe) |
+| Async handlers      | Return promises from handlers, await on the client                                                           |
+| Notifications       | Fire-and-forget messages from server to client                                                               |
+| Timeouts            | Per-call or global timeout with clear error messages                                                         |
+| Cancellation        | Stop awaiting with `AbortSignal` (client-side only)                                                          |
+| Structured errors   | Throw `RpcError` with code and data; check `instanceof` on client                                            |
+| Runtime validation  | Validate payloads before handlers execute                                                                    |
+| Protocol decoding   | All wire messages are validated before reaching client/server                                                |
+| Protocol versioning | Wire format includes version field for future upgrades                                                       |
 
 ## Install
 
