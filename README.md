@@ -43,6 +43,7 @@ Communicating between them requires `postMessage`, which is untyped and error-pr
 | Feature             | Description                                                        |
 | ------------------- | ------------------------------------------------------------------ |
 | Full type inference | Request and response types flow from schema to handlers to callers |
+| Zero dependencies   | No runtime dependencies; request IDs use built-in `crypto`         |
 | Async handlers      | Return promises from handlers, await on the client                 |
 | Notifications       | Fire-and-forget messages from server to client                     |
 | Timeouts            | Per-call or global timeout with clear error messages               |

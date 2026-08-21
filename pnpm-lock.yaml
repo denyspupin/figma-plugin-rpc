@@ -6,10 +6,6 @@ settings:
 
 importers:
   .:
-    dependencies:
-      nanoid:
-        specifier: ^5.1.6
-        version: 5.1.16
     devDependencies:
       '@commitlint/cli':
         specifier: ^20.4.0
@@ -2252,14 +2248,6 @@ packages:
     engines: { node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1 }
     hasBin: true
 
-  nanoid@5.1.16:
-    resolution:
-      {
-        integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==,
-      }
-    engines: { node: ^18 || >=20 }
-    hasBin: true
-
   natural-compare@1.4.0:
     resolution:
       {
@@ -4117,8 +4105,6 @@ snapshots:
       thenify-all: 1.6.0
 
   nanoid@3.3.18: {}
-
-  nanoid@5.1.16: {}
 
   natural-compare@1.4.0: {}
 
