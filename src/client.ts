@@ -309,13 +309,6 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 	getPendingCount(): number {
 		return this.pending.size;
 	}
-
-	/**
-	 * @deprecated Initialization state is observable through behavior; removed in v2.
-	 */
-	isInitialized(): boolean {
-		return this.initialized;
-	}
 }
 
 function createRpcClient<

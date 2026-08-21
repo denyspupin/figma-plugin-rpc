@@ -14,15 +14,7 @@ export type {
 	RpcNotificationMessage,
 } from './types';
 
-export {
-	decodeRpcMessage,
-	isRpcRequest,
-	isRpcResponse,
-	isRpcNotification,
-	isValidRpcRequest,
-	isValidRpcResponse,
-	isValidRpcNotification,
-} from './protocol';
+export { decodeRpcMessage, isRpcRequest, isRpcResponse, isRpcNotification } from './protocol';
 export type {
 	DecodedRpcMessage,
 	DecodedRpcRequest,
@@ -37,10 +29,6 @@ export { FigmaUiTransport, FigmaMainTransport } from './transport';
 
 export type { Logger } from './logger';
 export { noopLogger } from './logger';
-/**
- * @deprecated Internal formatting helper; removed from the public export surface in v2.
- */
-export { formatDuration } from './logger';
 
 export { RpcClient, createRpcClient } from './client';
 export type { RpcClientConfig } from './client';

@@ -6,11 +6,9 @@ const {
 	isRpcResponse,
 	isRpcNotification,
 	RpcError,
-	PROTOCOL_VERSION,
 	FigmaUiTransport,
 	FigmaMainTransport,
 	noopLogger,
-	formatDuration,
 } = require('figma-plugin-rpc');
 
 const checks = [];
@@ -22,13 +20,9 @@ checks.push(typeof isRpcRequest === 'function');
 checks.push(typeof isRpcResponse === 'function');
 checks.push(typeof isRpcNotification === 'function');
 checks.push(typeof RpcError === 'function');
-checks.push(PROTOCOL_VERSION === 1);
 checks.push(typeof FigmaUiTransport === 'function');
 checks.push(typeof FigmaMainTransport === 'function');
 checks.push(typeof noopLogger === 'object');
-checks.push(typeof formatDuration === 'function');
-checks.push(formatDuration(500) === '500ms');
-checks.push(formatDuration(1500) === '1s 500ms');
 
 const err = new RpcError('TEST', 'test error', { key: 'value' });
 checks.push(err instanceof Error);

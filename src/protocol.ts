@@ -264,10 +264,3 @@ export function isRpcNotification(msg: unknown): msg is RpcNotificationMessage {
 	const result = decodeRpcMessage(msg);
 	return result.ok && result.value.kind === 'notification';
 }
-
-/** @deprecated Use {@link isRpcRequest}; removed in v2. */
-export const isValidRpcRequest = isRpcRequest;
-/** @deprecated Use {@link isRpcResponse}; removed in v2. */
-export const isValidRpcResponse = isRpcResponse;
-/** @deprecated Use {@link isRpcNotification}; removed in v2. */
-export const isValidRpcNotification = isRpcNotification;

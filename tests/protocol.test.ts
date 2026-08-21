@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	decodeRpcMessage,
-	isValidRpcNotification,
-	isValidRpcRequest,
-	isValidRpcResponse,
-} from '../src/protocol';
+import { decodeRpcMessage, isRpcNotification, isRpcRequest, isRpcResponse } from '../src/protocol';
 
 describe('decodeRpcMessage', () => {
 	describe('non-object inputs', () => {
@@ -387,8 +382,8 @@ describe('decodeRpcMessage', () => {
 			if (!result.ok) {
 				expect(result.error.correlation).toEqual({ id: '1', procedure: 'add' });
 			}
-			expect(isValidRpcRequest(message)).toBe(false);
-			expect(isValidRpcNotification(message)).toBe(false);
+			expect(isRpcRequest(message)).toBe(false);
+			expect(isRpcNotification(message)).toBe(false);
 		});
 
 		it('rejects mixed request and response fields', () => {
@@ -405,8 +400,8 @@ describe('decodeRpcMessage', () => {
 			if (!result.ok) {
 				expect(result.error.correlation).toEqual({ id: '1', procedure: 'add' });
 			}
-			expect(isValidRpcRequest(message)).toBe(false);
-			expect(isValidRpcResponse(message)).toBe(false);
+			expect(isRpcRequest(message)).toBe(false);
+			expect(isRpcResponse(message)).toBe(false);
 		});
 
 		it('rejects empty object', () => {
@@ -428,112 +423,5 @@ describe('decodeRpcMessage', () => {
 		it('rejects __rpc without procedure or response/error', () => {
 			expect(decodeRpcMessage({ __rpc: true, id: '1' }).ok).toBe(false);
 		});
-	});
-});
-
-describe('isValidRpcRequest', () => {
-	it('returns true for valid request', () => {
-		expect(
-			isValidRpcRequest({ __rpc: true, id: '1', procedure: 'x', payload: undefined }),
-		).toBe(true);
-	});
-
-	it('returns false for response', () => {
-		expect(isValidRpcRequest({ __rpc: true, id: '1', procedure: 'x', response: 'ok' })).toBe(
-			false,
-		);
-	});
-
-	it('returns false for notification', () => {
-		expect(
-			isValidRpcRequest({ __rpcNotification: true, notification: 'x', payload: undefined }),
-		).toBe(false);
-	});
-
-	it('returns false for null', () => {
-		expect(isValidRpcRequest(null)).toBe(false);
-	});
-
-	it('returns false for missing payload', () => {
-		expect(isValidRpcRequest({ __rpc: true, id: '1', procedure: 'x' })).toBe(false);
-	});
-
-	it('returns false for inherited properties', () => {
-		const proto = { id: '1', procedure: 'x', payload: undefined };
-		const msg = Object.create(proto);
-		msg.__rpc = true;
-		expect(isValidRpcRequest(msg)).toBe(false);
-	});
-});
-
-describe('isValidRpcResponse', () => {
-	it('returns true for success response', () => {
-		expect(isValidRpcResponse({ __rpc: true, id: '1', procedure: 'x', response: 'ok' })).toBe(
-			true,
-		);
-	});
-
-	it('returns true for error response', () => {
-		expect(isValidRpcResponse({ __rpc: true, id: '1', procedure: 'x', error: 'fail' })).toBe(
-			true,
-		);
-	});
-
-	it('returns false for request', () => {
-		expect(
-			isValidRpcResponse({ __rpc: true, id: '1', procedure: 'x', payload: undefined }),
-		).toBe(false);
-	});
-
-	it('returns false for both response and error', () => {
-		expect(
-			isValidRpcResponse({
-				__rpc: true,
-				id: '1',
-				procedure: 'x',
-				response: 'ok',
-				error: 'fail',
-			}),
-		).toBe(false);
-	});
-
-	it('returns false for null', () => {
-		expect(isValidRpcResponse(null)).toBe(false);
-	});
-
-	it('returns false for non-string error', () => {
-		expect(isValidRpcResponse({ __rpc: true, id: '1', procedure: 'x', error: 123 })).toBe(
-			false,
-		);
-	});
-});
-
-describe('isValidRpcNotification', () => {
-	it('returns true for valid notification', () => {
-		expect(
-			isValidRpcNotification({
-				__rpcNotification: true,
-				notification: 'x',
-				payload: undefined,
-			}),
-		).toBe(true);
-	});
-
-	it('returns false for request', () => {
-		expect(
-			isValidRpcNotification({ __rpc: true, id: '1', procedure: 'x', payload: undefined }),
-		).toBe(false);
-	});
-
-	it('returns false for null', () => {
-		expect(isValidRpcNotification(null)).toBe(false);
-	});
-
-	it('returns false for missing notification name', () => {
-		expect(isValidRpcNotification({ __rpcNotification: true, payload: undefined })).toBe(false);
-	});
-
-	it('returns false for missing payload', () => {
-		expect(isValidRpcNotification({ __rpcNotification: true, notification: 'x' })).toBe(false);
 	});
 });
