@@ -601,6 +601,8 @@ rpc.on('selection-changed', ({ nodeIds }) => {
 
 Enable logging for debugging:
 
+> **Contract:** logger implementations (and the `onError` callback) must not throw. A throwing logger violates the contract and will propagate into message processing.
+
 ```ts
 const rpc = createRpcClient<Procedures, Notifications>(transport, {
 	logger: console,

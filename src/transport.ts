@@ -5,6 +5,7 @@ export interface RpcTransport {
 	onMessage(handler: (message: unknown) => void): () => void;
 }
 
+/** Implementations must not throw; a throwing logger violates the logging contract. */
 export interface Logger {
 	log(...args: unknown[]): void;
 	debug(...args: unknown[]): void;
