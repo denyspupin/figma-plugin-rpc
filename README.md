@@ -236,9 +236,6 @@ rpc.start();
 | `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`.                               |
 | `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()` function.               |
 | `getPendingCount()`                   | Number of in-flight requests (diagnostics).                                  |
-| `isInitialized()`                     | Whether `start()` has been called. Deprecated; removed in v2.                |
-
-> `init()` and `destroy()` remain as deprecated aliases of `start()` and `stop()` and are removed in v2.
 
 **Config options:**
 

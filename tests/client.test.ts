@@ -270,13 +270,12 @@ describe('RpcClient', () => {
 		expect(goodHandler).toHaveBeenCalled();
 	});
 
-	it('destroys: rejects pending and clears listeners', async () => {
+	it('stop rejects pending and clears listeners', async () => {
 		const promise = client.call('add', { a: 1, b: 2 });
 		client.destroy();
 
 		await expect(promise).rejects.toThrow(/stopped/);
 		expect(client.getPendingCount()).toBe(0);
-		expect(client.isInitialized()).toBe(false);
 	});
 
 	it('start/stop are the primary lifecycle names', async () => {
@@ -292,15 +291,24 @@ describe('RpcClient', () => {
 	});
 
 	it('init is idempotent', () => {
+		const handler = vi.fn();
+		client.on('progress', handler);
 		client.init();
 		client.init();
-		expect(client.isInitialized()).toBe(true);
+
+		transport.deliver({
+			__rpcNotification: true,
+			notification: 'progress',
+			payload: { percent: 50 },
+		});
+
+		expect(handler).toHaveBeenCalledTimes(1);
 	});
 
-	it('destroy is idempotent', () => {
+	it('destroy is idempotent', async () => {
 		client.destroy();
 		client.destroy();
-		expect(client.isInitialized()).toBe(false);
+		await expect(client.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
 	});
 
 	it('getPendingCount tracks in-flight requests', () => {
