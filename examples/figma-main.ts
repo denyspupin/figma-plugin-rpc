@@ -35,13 +35,10 @@ rpc.registerHandler('create-rectangle', ({ x, y, width, height }) => {
 	return { nodeId: node.id };
 });
 
-(figma.currentPage as unknown as { on: (event: string, handler: () => void) => void }).on(
-	'selectionchange',
-	() => {
-		rpc.notify('selection-changed', {
-			nodeIds: figma.currentPage.selection.map((n) => n.id),
-		});
-	},
-);
+figma.on('selectionchange', () => {
+	rpc.notify('selection-changed', {
+		nodeIds: figma.currentPage.selection.map((n) => n.id),
+	});
+});
 
 rpc.start();
