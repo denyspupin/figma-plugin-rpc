@@ -7,7 +7,6 @@ export interface RpcNotificationSchema {}
 export interface RpcProcedureDefinition {
 	request: unknown;
 	response: unknown;
-	error?: unknown;
 }
 
 export type ProcedureConstraint<Schema> = {
@@ -41,15 +40,6 @@ export type RpcResponse<
 	Schema extends ProcedureConstraint<Schema>,
 	T extends RpcProcedure<Schema>,
 > = Schema[T]['response'];
-
-export type RpcProcedureError<
-	Schema extends ProcedureConstraint<Schema>,
-	T extends RpcProcedure<Schema>,
-> = 'error' extends keyof Schema[T]
-	? Schema[T] extends { error?: infer E }
-		? Exclude<E, undefined>
-		: never
-	: never;
 
 export type RpcNotificationPayload<
 	Schema extends object,

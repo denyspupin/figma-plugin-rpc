@@ -7,7 +7,6 @@ export type {
 	RpcNotification,
 	RpcRequest,
 	RpcResponse,
-	RpcProcedureError,
 	RpcNotificationPayload,
 	RpcRequestMessage,
 	RpcResponseMessage,
