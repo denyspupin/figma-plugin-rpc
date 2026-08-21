@@ -105,27 +105,26 @@ describe('E2E: RpcClient + RpcServer', () => {
 	it('handles timeout correctly', async () => {
 		vi.useFakeTimers();
 
-		server.registerHandler('slow', async () => {
-			await new Promise((r) => setTimeout(r, 10000));
-			return { ok: true };
-		});
+		try {
+			server.registerHandler('slow', async () => {
+				await new Promise((r) => setTimeout(r, 10000));
+				return { ok: true };
+			});
 
-		const promise = client.call('slow', undefined, { timeout: 100 });
+			const promise = client.call('slow', undefined, { timeout: 100 });
 
-		vi.advanceTimersByTime(101);
+			vi.advanceTimersByTime(101);
 
-		await expect(promise).rejects.toThrow(/timed out/);
-
-		vi.useRealTimers();
+			await expect(promise).rejects.toThrow(/timed out/);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
-	it('handles unknown procedure on server', async () => {
-		server.registerHandler('add', () => ({ result: 0 }));
+	it('rejects calls to schema-defined procedures with no registered handler', async () => {
+		const promise = client.call('fail');
 
-		const promise = client.call('add', { a: 1, b: 2 });
-
-		const result = await promise;
-		expect(result).toEqual({ result: 0 });
+		await expect(promise).rejects.toThrow(/Unknown procedure/);
 	});
 
 	it('handles concurrent calls', async () => {
@@ -165,10 +164,13 @@ describe('E2E: RpcClient + RpcServer', () => {
 		server.stop();
 
 		vi.useFakeTimers();
-		const promise = client.call('add', { a: 3, b: 4 });
-		vi.advanceTimersByTime(30001);
-		await expect(promise).rejects.toThrow(/timed out/);
-		vi.useRealTimers();
+		try {
+			const promise = client.call('add', { a: 3, b: 4 });
+			vi.advanceTimersByTime(30001);
+			await expect(promise).rejects.toThrow(/timed out/);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	describe('Structured errors', () => {
