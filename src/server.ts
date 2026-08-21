@@ -8,9 +8,8 @@ import type {
 	RpcResponseMessage,
 	ProcedureConstraint,
 } from './types';
-import { PROTOCOL_VERSION } from './types';
 import { decodeRpcMessage } from './protocol';
-import { formatDuration, noopLogger, type Logger } from './transport';
+import { formatDuration, noopLogger, type Logger } from './logger';
 import type { RpcTransport } from './transport';
 import { RpcError } from './error';
 
@@ -178,7 +177,6 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 	): void {
 		const message: RpcNotificationMessage<Notifications, T> = {
 			__rpcNotification: true,
-			v: PROTOCOL_VERSION,
 			notification,
 			payload,
 		};
@@ -190,7 +188,6 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		try {
 			const message: RpcResponseMessage = {
 				__rpc: true,
-				v: PROTOCOL_VERSION,
 				id,
 				procedure,
 				response,
@@ -205,7 +202,6 @@ class RpcServer<Procedures extends ProcedureConstraint<Procedures>, Notification
 		try {
 			const message: RpcResponseMessage = {
 				__rpc: true,
-				v: PROTOCOL_VERSION,
 				id,
 				procedure,
 				error,

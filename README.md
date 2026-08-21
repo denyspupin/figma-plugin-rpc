@@ -126,7 +126,7 @@ import { createRpcClient, FigmaUiTransport } from 'figma-plugin-rpc';
 import type { Procedures, Notifications } from './rpc-schema';
 
 const rpc = createRpcClient<Procedures, Notifications>(new FigmaUiTransport());
-rpc.init();
+rpc.start();
 
 const { nodeIds } = await rpc.call('get-selection');
 
@@ -225,19 +225,21 @@ const rpc = createRpcClient<Procedures, Notifications>(new FigmaUiTransport(), {
 	logger: console, // or custom logger
 });
 
-rpc.init();
+rpc.start();
 ```
 
 **Methods:**
 
 | Method                                | Description                                                                  |
 | ------------------------------------- | ---------------------------------------------------------------------------- |
-| `init()`                              | Start listening for responses/notifications. Must be called before `call()`. |
-| `destroy()`                           | Stop listening, reject pending requests, clear handlers.                     |
+| `start()`                             | Start listening for responses/notifications. Must be called before `call()`. |
+| `stop()`                              | Stop listening, reject pending requests, clear handlers.                     |
 | `call(procedure, payload?, options?)` | Call a procedure, returns `Promise<response>`.                               |
 | `on(notification, handler)`           | Subscribe to a notification, returns `unsubscribe()` function.               |
-| `getPendingCount()`                   | Number of in-flight requests.                                                |
-| `isInitialized()`                     | Whether `init()` has been called.                                            |
+| `getPendingCount()`                   | Number of in-flight requests (diagnostics).                                  |
+| `isInitialized()`                     | Whether `start()` has been called. Deprecated; removed in v2.                |
+
+> `init()` and `destroy()` remain as deprecated aliases of `start()` and `stop()` and are removed in v2.
 
 **Config options:**
 

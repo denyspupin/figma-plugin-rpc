@@ -34,8 +34,15 @@ export type {
 	DecodeError,
 } from './protocol';
 
-export type { RpcTransport, Logger } from './transport';
-export { noopLogger, FigmaUiTransport, FigmaMainTransport, formatDuration } from './transport';
+export type { RpcTransport } from './transport';
+export { FigmaUiTransport, FigmaMainTransport } from './transport';
+
+export type { Logger } from './logger';
+export { noopLogger } from './logger';
+/**
+ * @deprecated Internal formatting helper; removed from the public export surface in v2.
+ */
+export { formatDuration } from './logger';
 
 export { RpcClient, createRpcClient } from './client';
 export type { RpcClientConfig } from './client';
