@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.2.0...v1.3.0) (2026-08-21)
+
+
+### Features
+
+* open deprecation window for v2 surface changes ([#39](https://github.com/denyspupin/figma-plugin-rpc/issues/39)) ([4da8f71](https://github.com/denyspupin/figma-plugin-rpc/commit/4da8f71e8029261dc7b09ee0eaab82382c23f852))
+
+
+### Bug Fixes
+
+* **client:** generate request ids without Web Crypto ([#44](https://github.com/denyspupin/figma-plugin-rpc/issues/44)) ([980fc43](https://github.com/denyspupin/figma-plugin-rpc/commit/980fc43f6b4099c0eb39643add7d80ddad6103ad))
+
 ## [1.2.0](https://github.com/denyspupin/figma-plugin-rpc/compare/v1.1.0...v1.2.0) (2026-08-14)
 
 
