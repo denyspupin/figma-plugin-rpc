@@ -26,6 +26,15 @@ const DEFAULT_CONFIG: RpcClientConfig = {
 	logger: noopLogger,
 };
 
+let requestIdCounter = 0;
+
+// Request IDs are correlation keys matched against the local pending map;
+// they need uniqueness, not cryptographic strength. Generation avoids Web
+// Crypto entirely because it is unavailable in Figma's plugin iframe.
+function createRequestId(): string {
+	return `rpc-${Date.now().toString(36)}-${(++requestIdCounter).toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 interface PendingEntry {
 	procedure: string;
 	startTime: number;
@@ -102,7 +111,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		const [payload, options] = args;
-		const id = crypto.randomUUID();
+		const id = createRequestId();
 		const timeout = options?.timeout ?? this.config.defaultTimeout;
 		const startTime = Date.now();
 

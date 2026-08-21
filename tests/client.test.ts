@@ -32,6 +32,15 @@ describe('RpcClient', () => {
 		await expect(uninitClient.call('add', { a: 1, b: 2 })).rejects.toThrow('not initialized');
 	});
 
+	it('generates unique request ids without Web Crypto', () => {
+		const ids = new Set<string>();
+		for (let i = 0; i < 100; i++) {
+			client.call('add', { a: 1, b: 2 }).catch(() => {});
+			ids.add((transport.getLastSent() as { id: string }).id);
+		}
+		expect(ids.size).toBe(100);
+	});
+
 	it('sends a request message with correct shape', () => {
 		client.call('add', { a: 1, b: 2 }).catch(() => {});
 
