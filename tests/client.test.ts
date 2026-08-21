@@ -127,51 +127,58 @@ describe('RpcClient', () => {
 	it('rejects pending on timeout', async () => {
 		vi.useFakeTimers();
 
-		const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
-			defaultTimeout: 100,
-		});
-		fastClient.init();
+		try {
+			const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
+				defaultTimeout: 100,
+			});
+			fastClient.init();
 
-		const promise = fastClient.call('slow');
+			const promise = fastClient.call('slow');
 
-		vi.advanceTimersByTime(101);
+			vi.advanceTimersByTime(101);
 
-		await expect(promise).rejects.toThrow(/timed out/);
+			await expect(promise).rejects.toThrow(/timed out/);
 
-		fastClient.destroy();
-		vi.useRealTimers();
+			fastClient.destroy();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('supports per-call timeout override', async () => {
 		vi.useFakeTimers();
 
-		const promise = client.call('slow', undefined, { timeout: 50 });
+		try {
+			const promise = client.call('slow', undefined, { timeout: 50 });
 
-		vi.advanceTimersByTime(51);
-		await expect(promise).rejects.toThrow(/timed out/);
-
-		vi.useRealTimers();
+			vi.advanceTimersByTime(51);
+			await expect(promise).rejects.toThrow(/timed out/);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('clears timeout on response', async () => {
 		vi.useFakeTimers();
 
-		const promise = client.call('add', { a: 1, b: 2 });
-		const sent = transport.getLastSent() as { id: string };
+		try {
+			const promise = client.call('add', { a: 1, b: 2 });
+			const sent = transport.getLastSent() as { id: string };
 
-		transport.deliver({
-			__rpc: true,
-			id: sent.id,
-			procedure: 'add',
-			response: { result: 3 },
-		});
+			transport.deliver({
+				__rpc: true,
+				id: sent.id,
+				procedure: 'add',
+				response: { result: 3 },
+			});
 
-		await expect(promise).resolves.toEqual({ result: 3 });
-		expect(client.getPendingCount()).toBe(0);
+			await expect(promise).resolves.toEqual({ result: 3 });
+			expect(client.getPendingCount()).toBe(0);
 
-		vi.advanceTimersByTime(100_000);
-
-		vi.useRealTimers();
+			vi.advanceTimersByTime(100_000);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('dispatches notifications to subscribers', () => {
@@ -353,20 +360,22 @@ describe('RpcClient', () => {
 		it('clears timeout when aborted', async () => {
 			vi.useFakeTimers();
 
-			const controller = new AbortController();
-			const promise = client.call('slow', undefined, {
-				signal: controller.signal,
-				timeout: 10000,
-			});
+			try {
+				const controller = new AbortController();
+				const promise = client.call('slow', undefined, {
+					signal: controller.signal,
+					timeout: 10000,
+				});
 
-			controller.abort();
+				controller.abort();
 
-			await expect(promise).rejects.toThrow(/aborted/);
-			expect(client.getPendingCount()).toBe(0);
+				await expect(promise).rejects.toThrow(/aborted/);
+				expect(client.getPendingCount()).toBe(0);
 
-			vi.advanceTimersByTime(20000);
-
-			vi.useRealTimers();
+				vi.advanceTimersByTime(20000);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it('cleans up abort listener on successful response', async () => {
@@ -408,23 +417,26 @@ describe('RpcClient', () => {
 		it('cleans up abort listener on timeout', async () => {
 			vi.useFakeTimers();
 
-			const controller = new AbortController();
-			const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
-				defaultTimeout: 100,
-			});
-			fastClient.init();
+			try {
+				const controller = new AbortController();
+				const fastClient = new RpcClient<TestProcedures, TestNotifications>(transport, {
+					defaultTimeout: 100,
+				});
+				fastClient.init();
 
-			const promise = fastClient.call('slow', undefined, { signal: controller.signal });
+				const promise = fastClient.call('slow', undefined, { signal: controller.signal });
 
-			vi.advanceTimersByTime(101);
+				vi.advanceTimersByTime(101);
 
-			await expect(promise).rejects.toThrow(/timed out/);
-			expect(fastClient.getPendingCount()).toBe(0);
+				await expect(promise).rejects.toThrow(/timed out/);
+				expect(fastClient.getPendingCount()).toBe(0);
 
-			controller.abort();
+				controller.abort();
 
-			fastClient.destroy();
-			vi.useRealTimers();
+				fastClient.destroy();
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it('works with void payload and signal', async () => {
@@ -460,17 +472,19 @@ describe('RpcClient', () => {
 		it('works with timeout and signal together', async () => {
 			vi.useFakeTimers();
 
-			const controller = new AbortController();
-			const promise = client.call('slow', undefined, {
-				timeout: 50,
-				signal: controller.signal,
-			});
+			try {
+				const controller = new AbortController();
+				const promise = client.call('slow', undefined, {
+					timeout: 50,
+					signal: controller.signal,
+				});
 
-			vi.advanceTimersByTime(51);
+				vi.advanceTimersByTime(51);
 
-			await expect(promise).rejects.toThrow(/timed out/);
-
-			vi.useRealTimers();
+				await expect(promise).rejects.toThrow(/timed out/);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it('abort after response does not affect other requests', async () => {
