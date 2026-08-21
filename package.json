@@ -79,9 +79,6 @@
 			"optional": true
 		}
 	},
-	"dependencies": {
-		"nanoid": "^5.1.6"
-	},
 	"devDependencies": {
 		"@commitlint/cli": "^20.4.0",
 		"@commitlint/config-conventional": "^20.4.0",

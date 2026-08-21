@@ -34,9 +34,6 @@ try {
 	const nodeModules = join(fixtureRoot, 'node_modules');
 	mkdirSync(nodeModules);
 	renameSync(join(fixtureRoot, 'package'), join(nodeModules, 'figma-plugin-rpc'));
-	cpSync(join(packageRoot, 'node_modules', 'nanoid'), join(nodeModules, 'nanoid'), {
-		recursive: true,
-	});
 
 	for (const fixture of ['esm.mjs', 'cjs.cjs']) {
 		cpSync(join(packageRoot, 'tests', 'package', fixture), join(fixtureRoot, fixture));

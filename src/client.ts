@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid';
 import type {
 	RpcNotification,
 	RpcNotificationPayload,
@@ -82,7 +81,7 @@ class RpcClient<Procedures extends ProcedureConstraint<Procedures>, Notification
 		}
 
 		const [payload, options] = args;
-		const id = nanoid();
+		const id = crypto.randomUUID();
 		const timeout = options?.timeout ?? this.config.defaultTimeout;
 		const startTime = Date.now();
 
