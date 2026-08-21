@@ -26,6 +26,7 @@
 	"engines": {
 		"node": ">=26"
 	},
+	"packageManager": "pnpm@11.22.0",
 	"scripts": {
 		"build": "tsup",
 		"dev": "tsup --watch",
@@ -33,21 +34,21 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"test:package": "npm run build && node tests/package/run.mjs",
+		"test:package": "tsup && node tests/package/run.mjs",
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"prepublishOnly": "npm run build",
-		"version": "npm run build && git add -A",
+		"prepublishOnly": "tsup",
+		"version": "tsup && git add package.json",
 		"prepare": "husky"
 	},
 	"lint-staged": {
 		"*.{js,ts}": [
-			"npm run lint -- --fix",
-			"npm run format"
+			"eslint --fix",
+			"prettier --write"
 		],
 		"*.{json,md,yml,yaml}": [
-			"npm run format"
+			"prettier --write"
 		]
 	},
 	"keywords": [
