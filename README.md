@@ -109,7 +109,7 @@ rpc.registerHandler('create-rectangle', ({ x, y, width, height }) => {
 	return { nodeId: node.id };
 });
 
-figma.currentPage.on('selectionchange', () => {
+figma.on('selectionchange', () => {
 	rpc.notify('selection-changed', {
 		nodeIds: figma.currentPage.selection.map((n) => n.id),
 	});
@@ -587,7 +587,7 @@ unsubscribe();
 
 ```ts
 // Server — notify on selection change
-figma.currentPage.on('selectionchange', () => {
+figma.on('selectionchange', () => {
 	rpc.notify('selection-changed', {
 		nodeIds: figma.currentPage.selection.map((n) => n.id),
 	});
